@@ -2,6 +2,8 @@
 
 #include <cstddef>
 
+#include "core/airlines.h"
+
 namespace core::adsb {
 
 /**
@@ -19,6 +21,8 @@ struct Aircraft {
   char callsign[9];
   char type[5];
   char alt[12];
+  /** Resolved from the callsign's ICAO prefix, or nullptr when unknown. */
+  const airlines::Airline* airline;
 };
 
 /** Hard cap on tracked targets; the render path allocates arrays of this size. */

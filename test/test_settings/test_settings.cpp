@@ -133,7 +133,18 @@ void test_unitsReset_leaves_range_alone(void) {
 
   TEST_ASSERT_FALSE(cs::useKm());
   TEST_ASSERT_TRUE(cs::showRunways());
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kNone),
+                          static_cast<uint8_t>(cs::airlineDisplay()));
   TEST_ASSERT_EQUAL_UINT8(range_before, cs::rangeIndex());
+}
+
+void test_airline_display_accepts_only_known_selector_values(void) {
+  cs::saveAirlineDisplayFromPortal("2");
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kAbbrev),
+                          static_cast<uint8_t>(cs::airlineDisplay()));
+  cs::saveAirlineDisplayFromPortal("bad");
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kNone),
+                          static_cast<uint8_t>(cs::airlineDisplay()));
 }
 
 // --- airport lookup ----------------------------------------------------------
@@ -211,6 +222,7 @@ int main(int, char**) {
   RUN_TEST(test_outer_km_is_ring3_over_three_quarters);
   RUN_TEST(test_rangeNext_cycles_and_wraps);
   RUN_TEST(test_unitsReset_leaves_range_alone);
+  RUN_TEST(test_airline_display_accepts_only_known_selector_values);
 
   RUN_TEST(test_findAirport_resolves_known_large_airport);
   RUN_TEST(test_findAirport_rejects_unknown);

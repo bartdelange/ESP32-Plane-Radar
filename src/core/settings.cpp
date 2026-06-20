@@ -21,6 +21,7 @@ constexpr char kKeyRange[] = "rangeIdx";
 constexpr char kKeyKm[] = "useKm";
 constexpr char kKeyRunways[] = "showRwys";
 constexpr char kKeyTerrain[] = "showTerr";
+constexpr char kKeyAirlineDisplay[] = "airlnDisp";
 constexpr char kKeySites[] = "sites";
 constexpr char kKeySiteIdx[] = "siteIdx";
 
@@ -34,6 +35,7 @@ uint8_t s_range_index = kDefaultRangeIndex;
 bool s_use_km = false;  // default is nautical miles
 bool s_show_runways = true;
 bool s_show_terrain = true;
+AirlineDisplay s_airline_display = AirlineDisplay::kNone;
 
 char s_site_idents[kMaxSites][5] = {};
 size_t s_site_count = 0;
@@ -195,6 +197,12 @@ void init() {
   s_use_km = KV::getBool(kNsRadar, kKeyKm, false);
   s_show_runways = KV::getBool(kNsRadar, kKeyRunways, true);
   s_show_terrain = KV::getBool(kNsRadar, kKeyTerrain, true);
+  const uint8_t airline_mode = KV::getU8(
+      kNsRadar, kKeyAirlineDisplay, static_cast<uint8_t>(AirlineDisplay::kNone));
+  s_airline_display =
+      airline_mode <= static_cast<uint8_t>(AirlineDisplay::kAbbrev)
+          ? static_cast<AirlineDisplay>(airline_mode)
+          : AirlineDisplay::kNone;
 
   loadSitesFromStorage();
   if (s_site_count == 0) {
@@ -318,6 +326,8 @@ bool showRunways() { return s_show_runways; }
 
 bool showTerrain() { return s_show_terrain; }
 
+AirlineDisplay airlineDisplay() { return s_airline_display; }
+
 void saveKmFromPortal(const char* checkbox_value) {
   s_use_km = portalCheckboxChecked(checkbox_value);
   KV::putBool(kNsRadar, kKeyKm, s_use_km);
@@ -336,13 +346,27 @@ void saveTerrainFromPortal(const char* checkbox_value) {
   platform::logf("Terrain layer: %s\n", s_show_terrain ? "on" : "off");
 }
 
+void saveAirlineDisplayFromPortal(const char* select_value) {
+  uint8_t mode = static_cast<uint8_t>(AirlineDisplay::kNone);
+  if (select_value != nullptr && select_value[0] >= '0' &&
+      select_value[0] <= '2' && select_value[1] == '\0') {
+    mode = static_cast<uint8_t>(select_value[0] - '0');
+  }
+  s_airline_display = static_cast<AirlineDisplay>(mode);
+  KV::putU8(kNsRadar, kKeyAirlineDisplay, mode);
+  const char* labels[] = {"none", "full name", "abbreviation"};
+  platform::logf("Airline display: %s\n", labels[mode]);
+}
+
 void unitsReset() {
   s_use_km = false;
   s_show_runways = true;
   s_show_terrain = true;
+  s_airline_display = AirlineDisplay::kNone;
   KV::remove(kNsRadar, kKeyKm);
   KV::remove(kNsRadar, kKeyRunways);
   KV::remove(kNsRadar, kKeyTerrain);
+  KV::remove(kNsRadar, kKeyAirlineDisplay);
   // rangeIdx is intentionally left alone; see the header.
 }
 

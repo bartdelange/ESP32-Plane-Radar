@@ -15,6 +15,7 @@ namespace core::portal {
 enum class Kind {
   kText,      ///< plain text (ICAO codes)
   kCheckbox,  ///< see core::settings::portalCheckboxChecked for the quirk
+  kSelect,    ///< a small fixed-choice selector
 };
 
 struct Field {

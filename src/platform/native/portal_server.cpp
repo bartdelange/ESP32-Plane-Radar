@@ -266,7 +266,7 @@ constexpr char kPageStyle[] =
     "padding:0 1rem;color:#111}"
     "h1{font-size:1.3rem}"
     "label{display:block;margin:.9rem 0}"
-    "input[type=text],input[type=password],input[type=number]"
+    "input[type=text],input[type=password],input[type=number],select"
     "{display:block;width:100%;box-sizing:border-box;padding:.4rem;"
     "margin-top:.25rem;font-size:1rem}"
     "button{margin-top:1.2rem;padding:.5rem 1.2rem;font-size:1rem}"
@@ -282,6 +282,28 @@ void appendField(std::string* html, const core::portal::Field& field) {
   const char* attrs_begin = attrs;
   while (*attrs_begin == ' ') {
     ++attrs_begin;
+  }
+
+  if (field.kind == core::portal::Kind::kSelect) {
+    *html += "<label>";
+    *html += htmlEscape(field.label);
+    *html += "<select name=\"";
+    *html += field.id;
+    *html += "\" id=\"";
+    *html += field.id;
+    *html += "\">";
+    const char* labels[] = {"None", "Full Airline Name", "Airline Abbreviation"};
+    for (size_t i = 0; i < 3; ++i) {
+      *html += "<option value=\"" + std::to_string(i) + "\"";
+      if (value[0] == static_cast<char>('0' + i) && value[1] == '\0') {
+        *html += " selected";
+      }
+      *html += ">";
+      *html += labels[i];
+      *html += "</option>";
+    }
+    *html += "</select></label>\n";
+    return;
   }
 
   char input[256];

@@ -58,6 +58,8 @@ void test_decodes_an_airborne_aircraft(void) {
   TEST_ASSERT_EQUAL_STRING("DLH8AB", ac.callsign);  // trailing pad trimmed
   TEST_ASSERT_EQUAL_STRING("A320", ac.type);
   TEST_ASSERT_EQUAL_STRING("34000 ft", ac.alt);
+  TEST_ASSERT_NOT_NULL(ac.airline);
+  TEST_ASSERT_EQUAL_STRING("Lufthansa", ac.airline->name);
 }
 
 void test_ground_aircraft_are_skipped(void) {
@@ -66,6 +68,13 @@ void test_ground_aircraft_are_skipped(void) {
   // scanner keeps walking past an element it discards.
   TEST_ASSERT_EQUAL_size_t(1, adsb::aircraftCount());
   TEST_ASSERT_EQUAL_STRING("DLH8AB", adsb::aircraftList()[0].callsign);
+}
+
+void test_unknown_callsigns_have_no_airline(void) {
+  TEST_ASSERT_TRUE(adsb::parseResponse(
+      R"({"ac":[{"hex":"abc","flight":"N123AB","lat":47.0,"lon":15.0}]})"));
+  TEST_ASSERT_EQUAL_size_t(1, adsb::aircraftCount());
+  TEST_ASSERT_NULL(adsb::aircraftList()[0].airline);
 }
 
 void test_aircraft_without_a_position_is_skipped(void) {
@@ -132,6 +141,7 @@ int main(int, char**) {
 
   RUN_TEST(test_decodes_an_airborne_aircraft);
   RUN_TEST(test_ground_aircraft_are_skipped);
+  RUN_TEST(test_unknown_callsigns_have_no_airline);
   RUN_TEST(test_aircraft_without_a_position_is_skipped);
 
   RUN_TEST(test_quiet_sky_reports_no_aircraft);

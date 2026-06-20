@@ -25,6 +25,7 @@ constexpr Field kFields[] = {
      Kind::kCheckbox, 2, true},
     {"show_terrain", "Show terrain", "type=\"checkbox\"", Kind::kCheckbox, 2,
      true},
+    {"airline_mode", "Airline labels", "", Kind::kSelect, 2, false},
 };
 
 char s_pending_sites[settings::kMaxSites][6] = {};
@@ -58,6 +59,11 @@ void currentValue(const Field& field, char* buf, size_t len) {
   }
   if (isSiteField(field)) {
     snprintf(buf, len, "%s", settings::siteSlotIdent(siteFieldSlot(field)));
+    return;
+  }
+  if (isField(field, "airline_mode")) {
+    snprintf(buf, len, "%u",
+             static_cast<unsigned>(settings::airlineDisplay()));
     return;
   }
   buf[0] = '\0';
@@ -97,6 +103,8 @@ void applyValue(const Field& field, const char* value) {
     settings::saveRunwaysFromPortal(value);
   } else if (isField(field, "show_terrain")) {
     settings::saveTerrainFromPortal(value);
+  } else if (isField(field, "airline_mode")) {
+    settings::saveAirlineDisplayFromPortal(value);
   }
 }
 

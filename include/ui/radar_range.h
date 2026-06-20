@@ -18,6 +18,7 @@
 namespace ui::radar {
 
 using RangePreset = core::settings::RangePreset;
+using AirlineDisplay = core::settings::AirlineDisplay;
 
 // `static` is load-bearing: a constexpr reference at namespace scope has
 // external linkage, so without it every translation unit emits a definition and
@@ -36,6 +37,7 @@ inline uint8_t rangeIndex() { return core::settings::rangeIndex(); }
 inline bool useKm() { return core::settings::useKm(); }
 inline bool showRunways() { return core::settings::showRunways(); }
 inline bool showTerrain() { return core::settings::showTerrain(); }
+inline AirlineDisplay airlineDisplay() { return core::settings::airlineDisplay(); }
 
 inline void saveKmFromPortal(const char* v) {
   core::settings::saveKmFromPortal(v);
@@ -45,6 +47,9 @@ inline void saveRunwaysFromPortal(const char* v) {
 }
 inline void saveTerrainFromPortal(const char* v) {
   core::settings::saveTerrainFromPortal(v);
+}
+inline void saveAirlineDisplayFromPortal(const char* v) {
+  core::settings::saveAirlineDisplayFromPortal(v);
 }
 inline void unitsReset() { core::settings::unitsReset(); }
 

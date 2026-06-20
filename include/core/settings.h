@@ -19,6 +19,13 @@
 
 namespace core::settings {
 
+/** How aircraft tags should identify a resolved airline. */
+enum class AirlineDisplay : uint8_t {
+  kNone = 0,
+  kFullName = 1,
+  kAbbrev = 2,
+};
+
 /**
  * Range presets (label on ring 3 = 3/4 of outer radius).
  *
@@ -116,11 +123,14 @@ uint8_t rangeIndex();
 bool useKm();
 bool showRunways();
 bool showTerrain();
+AirlineDisplay airlineDisplay();
 
 /** Apply a WiFi portal checkbox value and persist it. */
 void saveKmFromPortal(const char* checkbox_value);
 void saveRunwaysFromPortal(const char* checkbox_value);
 void saveTerrainFromPortal(const char* checkbox_value);
+/** Apply the portal selector: 0 none, 1 full name, 2 friendly abbreviation. */
+void saveAirlineDisplayFromPortal(const char* select_value);
 
 /**
  * Reset units and the runway/terrain overlays to their defaults.
