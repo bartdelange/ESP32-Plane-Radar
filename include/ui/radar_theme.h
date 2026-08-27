@@ -46,6 +46,19 @@ constexpr float kAircraftTrackLengthScale = 1.5f / 5.0f;
 /** drawWideLine half-width for speed vectors (~2 px total). */
 constexpr float kAircraftTrackLineHalfWidth = 1.0f;
 
+/**
+ * Runway length exaggeration.
+ *
+ * Real runways are 2-4 km. At a 20 NM ring that is only a couple of pixels, so
+ * they read as dots rather than strips and their orientation — the useful part
+ * — is invisible. The drawn line is stretched about the runway's midpoint, so
+ * position and bearing stay true while the length becomes legible.
+ *
+ * Deliberately cosmetic: this overlay is an orientation aid, not a chart. At
+ * this factor a 3 km runway draws as if it were 15 km.
+ */
+constexpr float kRunwayLengthScale = 5.0f;
+
 constexpr float kRunwayLineWidthPx = 2.0f;
 constexpr float kRunwayLineHalfWidth = kRunwayLineWidthPx * 0.5f;
 constexpr int kRunwayLabelHeightPx = kCardinalLabelHeightPx;
@@ -61,6 +74,19 @@ constexpr int kBeyondRingDotRadiusPx = 4;
 constexpr int kBeyondRingScreenMarginPx = 2;
 /** Target cap height (px) for aircraft tags (bold, slightly above scale label). */
 constexpr int kAircraftTagLabelHeightPx = 13;
+
+/**
+ * Above this many tagged aircraft, tags collapse to the callsign alone.
+ *
+ * A full tag is three lines (callsign / type / altitude). On a 240 px disc that
+ * is fine for a handful of aircraft and unreadable mush once the sky is busy —
+ * and the callsign is the line you actually read. Dropping to one line trades
+ * detail for legibility exactly when legibility is what is scarce.
+ *
+ * Counts only aircraft drawn inside the outer ring. Traffic beyond it renders
+ * as a bare rim dot with no tag, so it cannot contribute to tag clutter.
+ */
+constexpr int kTagCompactAboveCount = 4;
 
 /** RGB565 palette targets (applied in initPalette). */
 constexpr uint8_t kBgR = 4;
@@ -81,6 +107,15 @@ constexpr uint8_t kTagTypeB = 0;
 constexpr uint8_t kTagAltR = 90;
 constexpr uint8_t kTagAltG = 200;
 constexpr uint8_t kTagAltB = 255;
+constexpr uint8_t kTagRouteR = 145;
+constexpr uint8_t kTagRouteG = 235;
+constexpr uint8_t kTagRouteB = 170;
+constexpr uint8_t kVertClimbR = 60;
+constexpr uint8_t kVertClimbG = 230;
+constexpr uint8_t kVertClimbB = 90;
+constexpr uint8_t kVertDescentR = 255;
+constexpr uint8_t kVertDescentG = 120;
+constexpr uint8_t kVertDescentB = 30;
 constexpr uint8_t kRunwayR = 56;
 constexpr uint8_t kRunwayG = 150;
 constexpr uint8_t kRunwayB = 170;
@@ -88,6 +123,24 @@ constexpr uint8_t kRunwayB = 170;
 constexpr uint8_t kRunwayLabelR = 110;
 constexpr uint8_t kRunwayLabelG = 210;
 constexpr uint8_t kRunwayLabelB = 230;
+
+/**
+ * Terrain background: hypsometric green bands, dark lowlands to lighter
+ * highlands. The separate Natural Earth mask decides land versus water, so the
+ * lowest elevation band can safely include below-sea-level dry land.
+ * Deliberately dimmer than the grid green so rings, runways and aircraft stay
+ * legible on top.
+ */
+constexpr int kTerrainBandCount = 7;
+/** Ascending band floors (metres AMSL). */
+constexpr int16_t kTerrainBandMinM[kTerrainBandCount] = {-100, 200,  500, 1000,
+                                                         1500, 2000, 3000};
+constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8,  12, 16, 22,
+                                                      30, 40, 52};
+constexpr uint8_t kTerrainBandG[kTerrainBandCount] = {34, 46, 60, 74,
+                                                      88, 104, 122};
+constexpr uint8_t kTerrainBandB[kTerrainBandCount] = {18, 22, 26, 30,
+                                                      36, 44, 54};
 
 extern uint16_t kColorBackground;
 extern uint16_t kColorGrid;
@@ -97,7 +150,12 @@ extern uint16_t kColorAircraft;
 extern uint16_t kColorTrackVector;
 extern uint16_t kColorTagType;
 extern uint16_t kColorTagAltitude;
+extern uint16_t kColorTagRoute;
+extern uint16_t kColorVertClimb;
+extern uint16_t kColorVertDescent;
+extern uint16_t kColorTrackTrail[4];
 extern uint16_t kColorRunway;
 extern uint16_t kColorRunwayLabel;
+extern uint16_t kColorTerrain[kTerrainBandCount];
 
 }  // namespace ui::radar
