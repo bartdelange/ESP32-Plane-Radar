@@ -136,7 +136,13 @@ void refreshPortalParamDefaults() {
 void onPortalParamsSaved() {
   const core::portal::Field* fields = core::portal::fields();
   for (size_t i = 0; i < s_param_count; ++i) {
-    core::portal::applyValue(fields[i], s_params[i]->getValue());
+    if (fields[i].kind == core::portal::Kind::kCheckbox && s_wm.server) {
+      core::portal::applyValue(
+          fields[i],
+          s_wm.server->hasArg(fields[i].id) ? "T" : nullptr);
+    } else {
+      core::portal::applyValue(fields[i], s_params[i]->getValue());
+    }
   }
   core::portal::commit();
   if (s_wm.server) {
