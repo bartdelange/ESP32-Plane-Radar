@@ -62,9 +62,9 @@ bool applyValueById(const char* id, const char* value);
 /**
  * Commit a form submission.
  *
- * Call after feeding every field through applyValue(): the airport slots are
- * only meaningful as a whole list, so they are staged during apply and
- * persisted here. Blanking every slot restores config::kDefaultSiteIdent.
+ * Call after feeding every field through applyValue(): the latitude and
+ * longitude fields are applied together, so they are staged during apply and
+ * validated/persisted here.
  */
 void commit();
 

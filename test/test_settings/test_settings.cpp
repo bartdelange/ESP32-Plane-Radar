@@ -14,39 +14,23 @@
 
 #include "config.h"
 #include "core/settings.h"
-#include "core/airport_find.h"
 
 namespace cs = core::settings;
-namespace ca = core::airport;
-
-// --- default site ------------------------------------------------------------
+// --- current location --------------------------------------------------------
 
 /** Must run before anything else writes to the scratch store. */
-void test_fresh_store_seeds_the_default_site(void) {
+void test_fresh_store_uses_the_default_current_location(void) {
   cs::init();
-
-  TEST_ASSERT_EQUAL_size_t(1, cs::siteCount());
-  TEST_ASSERT_EQUAL_STRING(config::kDefaultSiteIdent, cs::siteActiveIdent());
-
-  data::large_airports::Airport ap{};
-  TEST_ASSERT_TRUE(ca::findAirport(config::kDefaultSiteIdent, &ap));
-  TEST_ASSERT_DOUBLE_WITHIN(1e-5, static_cast<double>(ap.lat_e7) / 1.0e7,
-                            cs::lat());
-  TEST_ASSERT_DOUBLE_WITHIN(1e-5, static_cast<double>(ap.lon_e7) / 1.0e7,
-                            cs::lon());
+  TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLat, cs::lat());
+  TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLon, cs::lon());
 }
 
-void test_saveSites_with_no_idents_reseeds_the_default(void) {
-  // Blanking every portal slot is the only way to reach an empty list, and it
-  // must land on the default rather than on no centre at all.
-  const char* both[] = {"LOWG", "LOWW"};
-  TEST_ASSERT_TRUE(cs::saveSites(both, 2));
-  TEST_ASSERT_EQUAL_size_t(2, cs::siteCount());
-
-  const char* blank[] = {"", nullptr};
-  TEST_ASSERT_TRUE(cs::saveSites(blank, 2));
-  TEST_ASSERT_EQUAL_size_t(1, cs::siteCount());
-  TEST_ASSERT_EQUAL_STRING(config::kDefaultSiteIdent, cs::siteActiveIdent());
+void test_current_location_is_persisted_and_validated(void) {
+  TEST_ASSERT_TRUE(cs::saveLocationFromPortal("52.123456", "4.654321"));
+  TEST_ASSERT_DOUBLE_WITHIN(1e-6, 52.123456, cs::lat());
+  TEST_ASSERT_DOUBLE_WITHIN(1e-6, 4.654321, cs::lon());
+  TEST_ASSERT_FALSE(cs::saveLocationFromPortal("91", "4"));
+  TEST_ASSERT_DOUBLE_WITHIN(1e-6, 52.123456, cs::lat());
 }
 
 // --- portalCheckboxChecked ---------------------------------------------------
@@ -147,54 +131,6 @@ void test_airline_display_accepts_only_known_selector_values(void) {
                           static_cast<uint8_t>(cs::airlineDisplay()));
 }
 
-// --- airport lookup ----------------------------------------------------------
-
-void test_findAirport_resolves_known_large_airport(void) {
-  data::large_airports::Airport ap{};
-  TEST_ASSERT_TRUE(ca::findAirport("LOWG", &ap));
-  TEST_ASSERT_EQUAL_STRING("LOWG", ap.ident);
-}
-
-void test_findAirport_rejects_unknown(void) {
-  TEST_ASSERT_FALSE(ca::findAirport("ZZZZ", nullptr));
-  TEST_ASSERT_FALSE(ca::findAirport("LOW", nullptr));
-}
-
-// --- site list ---------------------------------------------------------------
-
-void test_saveSites_resolves_and_cycles(void) {
-  cs::clearLocation();
-  const char* idents[] = {"LOWG", "LOWW"};
-  TEST_ASSERT_TRUE(cs::saveSites(idents, 2));
-  TEST_ASSERT_EQUAL_size_t(2, cs::siteCount());
-  TEST_ASSERT_EQUAL_STRING("LOWG", cs::siteActiveIdent());
-
-  data::large_airports::Airport ap{};
-  TEST_ASSERT_TRUE(ca::findAirport("LOWG", &ap));
-  double lat0 = 0.0;
-  double lon0 = 0.0;
-  lat0 = static_cast<double>(ap.lat_e7) / 1.0e7;
-  lon0 = static_cast<double>(ap.lon_e7) / 1.0e7;
-  TEST_ASSERT_DOUBLE_WITHIN(1e-5, lat0, cs::lat());
-  TEST_ASSERT_DOUBLE_WITHIN(1e-5, lon0, cs::lon());
-
-  cs::siteNext();
-  TEST_ASSERT_EQUAL_STRING("LOWW", cs::siteActiveIdent());
-  TEST_ASSERT_EQUAL_UINT8(1, cs::siteIndex());
-
-  cs::siteNext();
-  TEST_ASSERT_EQUAL_STRING("LOWG", cs::siteActiveIdent());
-}
-
-void test_saveSites_rejects_unknown_codes(void) {
-  cs::clearLocation();
-  const char* idents[] = {"LOWG", "ZZZZ", "LOWW"};
-  cs::saveSites(idents, 3);
-  TEST_ASSERT_EQUAL_size_t(2, cs::siteCount());
-  TEST_ASSERT_EQUAL_STRING("LOWG", cs::siteIdent(0));
-  TEST_ASSERT_EQUAL_STRING("LOWW", cs::siteIdent(1));
-}
-
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -209,8 +145,8 @@ int main(int, char**) {
 
   UNITY_BEGIN();
 
-  RUN_TEST(test_fresh_store_seeds_the_default_site);
-  RUN_TEST(test_saveSites_with_no_idents_reseeds_the_default);
+  RUN_TEST(test_fresh_store_uses_the_default_current_location);
+  RUN_TEST(test_current_location_is_persisted_and_validated);
 
   RUN_TEST(test_checkbox_single_TF_means_submitted);
   RUN_TEST(test_checkbox_accepts_conventional_on);
@@ -224,10 +160,6 @@ int main(int, char**) {
   RUN_TEST(test_unitsReset_leaves_range_alone);
   RUN_TEST(test_airline_display_accepts_only_known_selector_values);
 
-  RUN_TEST(test_findAirport_resolves_known_large_airport);
-  RUN_TEST(test_findAirport_rejects_unknown);
-  RUN_TEST(test_saveSites_resolves_and_cycles);
-  RUN_TEST(test_saveSites_rejects_unknown_codes);
 
   return UNITY_END();
 }

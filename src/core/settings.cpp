@@ -3,9 +3,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 
 #include "config.h"
-#include "core/airport_find.h"
 #include "core/platform.h"
 
 namespace core::settings {
@@ -22,24 +22,18 @@ constexpr char kKeyKm[] = "useKm";
 constexpr char kKeyRunways[] = "showRwys";
 constexpr char kKeyTerrain[] = "showTerr";
 constexpr char kKeyAirlineDisplay[] = "airlnDisp";
-constexpr char kKeySites[] = "sites";
-constexpr char kKeySiteIdx[] = "siteIdx";
+constexpr char kKeyLat[] = "lat";
+constexpr char kKeyLon[] = "lon";
 
 constexpr uint8_t kDefaultRangeIndex = 1;  // 40 NM ring
 
-// Resolved from the active site ident in init(); an ident lookup is not
-// constant-expression material, so these start at 0 rather than at a default.
-double s_lat = 0.0;
-double s_lon = 0.0;
+double s_lat = config::kDefaultRadarLat;
+double s_lon = config::kDefaultRadarLon;
 uint8_t s_range_index = kDefaultRangeIndex;
 bool s_use_km = false;  // default is nautical miles
 bool s_show_runways = true;
 bool s_show_terrain = true;
 AirlineDisplay s_airline_display = AirlineDisplay::kNone;
-
-char s_site_idents[kMaxSites][5] = {};
-size_t s_site_count = 0;
-uint8_t s_site_index = 0;
 
 CenterChangedFn s_center_changed_fn = nullptr;
 
@@ -50,141 +44,16 @@ bool validLatLon(double lat_v, double lon_v) {
   return lat_v >= -90.0 && lat_v <= 90.0 && lon_v >= -180.0 && lon_v <= 180.0;
 }
 
-void airportToDegrees(const data::large_airports::Airport& ap, double* lat,
-                      double* lon) {
-  *lat = static_cast<double>(ap.lat_e7) / 1.0e7;
-  *lon = static_cast<double>(ap.lon_e7) / 1.0e7;
-}
-
-void persistSitesString() {
-  if (s_site_count == 0) {
-    KV::remove(kNsRadar, kKeySites);
-    return;
-  }
-
-  char buf[kMaxSites * 5];
-  size_t at = 0;
-  for (size_t i = 0; i < s_site_count; ++i) {
-    if (i > 0) {
-      buf[at++] = ',';
-    }
-    const size_t len = strlen(s_site_idents[i]);
-    memcpy(buf + at, s_site_idents[i], len);
-    at += len;
-  }
-  buf[at] = '\0';
-  KV::putString(kNsRadar, kKeySites, buf);
-}
-
-/**
- * Reset the list to the single compile-time default site.
- *
- * config::kDefaultSiteIdent is only matched against the generated airport table
- * at runtime, so a typo there — or a dataset regeneration that drops the
- * ident — would otherwise leave the centre at 0/0. Falling back to the table's
- * first entry keeps the centre resolvable.
- */
-void seedDefaultSite() {
-  data::large_airports::Airport ap{};
-  if (!core::airport::findAirport(config::kDefaultSiteIdent, &ap)) {
-    ap = data::large_airports::kAirports[0];
-    platform::logf("Default site %s missing from airport data; using %s\n",
-                   config::kDefaultSiteIdent, ap.ident);
-  }
-
-  memcpy(s_site_idents[0], ap.ident, sizeof(s_site_idents[0]));
-  for (size_t i = 1; i < kMaxSites; ++i) {
-    s_site_idents[i][0] = '\0';
-  }
-  s_site_count = 1;
-  s_site_index = 0;
-}
-
-void applyActiveSiteCoords() {
-  if (s_site_index >= s_site_count) {
-    s_site_index = 0;
-  }
-
-  data::large_airports::Airport ap{};
-  if (!core::airport::findAirport(s_site_idents[s_site_index], &ap)) {
-    return;
-  }
-  double lat_v = 0.0;
-  double lon_v = 0.0;
-  airportToDegrees(ap, &lat_v, &lon_v);
-  if (!validLatLon(lat_v, lon_v)) {
-    platform::logf("Airport %s has out-of-range coordinates; centre kept\n",
-                   ap.ident);
-    return;
-  }
-
+void applyLocation(double lat_v, double lon_v) {
   const double prev_lat = s_lat;
   const double prev_lon = s_lon;
   s_lat = lat_v;
   s_lon = lon_v;
 
-  // Invalidate downstream caches (ADS-B aircraft and terrain retry gates)
-  // regardless of which path moved the centre — double-tap airport advance,
-  // portal save, or factory reset. Only fires when coordinates actually
-  // change, so portal saves preserving the active site avoid clearing stores.
   if (s_center_changed_fn != nullptr &&
       (s_lat != prev_lat || s_lon != prev_lon)) {
     s_center_changed_fn();
   }
-}
-
-void loadSitesFromStorage() {
-  s_site_count = 0;
-  s_site_index = 0;
-
-  const std::string stored = KV::getString(kNsRadar, kKeySites, "");
-  if (stored.empty()) {
-    return;
-  }
-
-  char ident[5];
-  size_t slot = 0;
-  size_t i = 0;
-  while (i <= stored.size() && slot < kMaxSites) {
-    while (i < stored.size() &&
-           (stored[i] == ',' || stored[i] == ' ' || stored[i] == '\t')) {
-      ++i;
-    }
-    if (i >= stored.size()) {
-      break;
-    }
-
-    size_t start = i;
-    while (i < stored.size() && stored[i] != ',') {
-      ++i;
-    }
-    const size_t len = i - start;
-    if (len == 0 || len >= sizeof(ident)) {
-      continue;
-    }
-    memcpy(ident, stored.data() + start, len);
-    ident[len] = '\0';
-
-    data::large_airports::Airport ap{};
-    if (!core::airport::findAirport(ident, &ap)) {
-      platform::logf("Unknown airport ident dropped: %s\n", ident);
-      continue;
-    }
-
-    memcpy(s_site_idents[slot], ap.ident, sizeof(s_site_idents[slot]));
-    ++slot;
-  }
-
-  s_site_count = slot;
-  if (s_site_count == 0) {
-    KV::remove(kNsRadar, kKeySiteIdx);
-    return;
-  }
-
-  const uint8_t saved = KV::getU8(kNsRadar, kKeySiteIdx, 0);
-  s_site_index = (saved < s_site_count) ? saved : 0;
-  persistSitesString();
-  KV::putU8(kNsRadar, kKeySiteIdx, s_site_index);
 }
 
 }  // namespace
@@ -204,11 +73,13 @@ void init() {
           ? static_cast<AirlineDisplay>(airline_mode)
           : AirlineDisplay::kNone;
 
-  loadSitesFromStorage();
-  if (s_site_count == 0) {
-    seedDefaultSite();
+  if (KV::has(kNsRadar, kKeyLat) && KV::has(kNsRadar, kKeyLon)) {
+    const double lat_v = KV::getDouble(kNsRadar, kKeyLat, config::kDefaultRadarLat);
+    const double lon_v = KV::getDouble(kNsRadar, kKeyLon, config::kDefaultRadarLon);
+    if (validLatLon(lat_v, lon_v)) {
+      applyLocation(lat_v, lon_v);
+    }
   }
-  applyActiveSiteCoords();
 }
 
 // --- Radar centre ------------------------------------------------------------
@@ -222,88 +93,23 @@ void setCenterChangedFn(CenterChangedFn fn) {
 }
 
 void clearLocation() {
-  KV::remove(kNsRadar, kKeySites);
-  KV::remove(kNsRadar, kKeySiteIdx);
-  seedDefaultSite();
-  applyActiveSiteCoords();
+  KV::remove(kNsRadar, kKeyLat);
+  KV::remove(kNsRadar, kKeyLon);
+  applyLocation(config::kDefaultRadarLat, config::kDefaultRadarLon);
 }
 
-// --- Airport site list -------------------------------------------------------
-
-size_t siteCount() { return s_site_count; }
-
-const char* siteIdent(size_t index) {
-  if (index >= s_site_count) {
-    return nullptr;
-  }
-  return s_site_idents[index];
-}
-
-const char* siteSlotIdent(size_t slot) {
-  if (slot >= s_site_count) {
-    return "";
-  }
-  return s_site_idents[slot];
-}
-
-const char* siteActiveIdent() {
-  if (s_site_count == 0) {
-    return nullptr;
-  }
-  return s_site_idents[s_site_index];
-}
-
-uint8_t siteIndex() { return s_site_index; }
-
-void siteNext() {
-  if (s_site_count < 2) {
-    return;
-  }
-  s_site_index = static_cast<uint8_t>((s_site_index + 1) % s_site_count);
-  KV::putU8(kNsRadar, kKeySiteIdx, s_site_index);
-  applyActiveSiteCoords();
-}
-
-bool saveSites(const char* const* idents, size_t count) {
-  char resolved[kMaxSites][5];
-  size_t n = 0;
-
-  for (size_t i = 0; i < count && n < kMaxSites; ++i) {
-    if (idents[i] == nullptr || idents[i][0] == '\0') {
-      continue;
-    }
-
-    data::large_airports::Airport ap{};
-    if (!core::airport::findAirport(idents[i], &ap)) {
-      platform::logf("Unknown airport ident ignored: %s\n", idents[i]);
-      continue;
-    }
-
-    memcpy(resolved[n], ap.ident, sizeof(resolved[n]));
-    ++n;
-  }
-
-  if (n == 0) {
-    // Blanking every slot means "back to the default airport", the only
-    // remaining meaning now that there is no manual coordinate to fall back to.
-    seedDefaultSite();
-  } else {
-    s_site_count = n;
-    s_site_index = (s_site_index < s_site_count) ? s_site_index : 0;
-    for (size_t i = 0; i < kMaxSites; ++i) {
-      if (i < n) {
-        memcpy(s_site_idents[i], resolved[i], sizeof(s_site_idents[i]));
-      } else {
-        s_site_idents[i][0] = '\0';
-      }
-    }
-  }
-
-  persistSitesString();
-  KV::putU8(kNsRadar, kKeySiteIdx, s_site_index);
-  applyActiveSiteCoords();
-  platform::logf("Airport sites saved: %u active\n",
-                   static_cast<unsigned>(s_site_count));
+bool saveLocationFromPortal(const char* lat_str, const char* lon_str) {
+  if (lat_str == nullptr || lon_str == nullptr) return false;
+  char* lat_end = nullptr;
+  char* lon_end = nullptr;
+  const double lat_v = strtod(lat_str, &lat_end);
+  const double lon_v = strtod(lon_str, &lon_end);
+  if (lat_end == lat_str || lon_end == lon_str || *lat_end != '\0' ||
+      *lon_end != '\0' || !validLatLon(lat_v, lon_v)) return false;
+  KV::putDouble(kNsRadar, kKeyLat, lat_v);
+  KV::putDouble(kNsRadar, kKeyLon, lon_v);
+  applyLocation(lat_v, lon_v);
+  platform::logf("Current location: %.6f, %.6f\n", lat_v, lon_v);
   return true;
 }
 

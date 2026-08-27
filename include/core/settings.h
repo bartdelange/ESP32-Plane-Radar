@@ -9,9 +9,8 @@
  * core::platform::KeyValueStore, so the device keeps using NVS and the native
  * harness uses a file.
  *
- * The radar centre has a single source: the airport site list. The list is
- * never empty — config::kDefaultSiteIdent is seeded into slot 0 whenever
- * storage yields nothing — so lat()/lon() always name a real airport.
+ * The radar centre has one source: the user's persisted current/home latitude
+ * and longitude. Airport data is display/reference data only.
  */
 
 #include <cstddef>
@@ -69,9 +68,7 @@ constexpr size_t kRangePresetCount =
  * Devices flashed before the manual coordinates were removed still carry an
  * orphaned "radar" namespace holding lat/lon. Nothing reads it.
  */
-constexpr char kNsRadar[] = "planeradar";   ///< keys: rangeIdx, useKm, showRwys, showTerr, sites, siteIdx
-
-constexpr size_t kMaxSites = 6;
+constexpr char kNsRadar[] = "planeradar";   ///< keys: lat, lon, rangeIdx, useKm, showRwys, showTerr
 
 // --- Lifecycle ---------------------------------------------------------------
 
@@ -97,18 +94,10 @@ using CenterChangedFn = void (*)();
  */
 void setCenterChangedFn(CenterChangedFn fn);
 
-/** Drop the stored site list and revert to config::kDefaultSiteIdent. */
+/** Drop stored current-location coordinates and revert to config defaults. */
 void clearLocation();
-
-// --- Airport site list -------------------------------------------------------
-
-size_t siteCount();
-const char* siteIdent(size_t index);
-const char* siteSlotIdent(size_t slot);
-const char* siteActiveIdent();
-uint8_t siteIndex();
-void siteNext();
-bool saveSites(const char* const* idents, size_t count);
+/** Parse, validate, persist and apply portal coordinate fields. */
+bool saveLocationFromPortal(const char* lat_str, const char* lon_str);
 
 // --- Range preset ------------------------------------------------------------
 
@@ -135,7 +124,7 @@ void saveAirlineDisplayFromPortal(const char* select_value);
 /**
  * Reset units and the runway/terrain overlays to their defaults.
  *
- * Note the asymmetry with clearLocation(), which resets the site list outright:
+ * Note the asymmetry with clearLocation(), which resets the current location:
  * this deliberately does NOT reset the range preset. A Wi-Fi credential wipe
  * returns the display to NM with runways and terrain on, but leaves the user's
  * chosen zoom alone.

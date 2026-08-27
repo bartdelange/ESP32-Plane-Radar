@@ -42,7 +42,7 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 
 | Field | Purpose |
 |-------|---------|
-| **Airport 1–6 (ICAO)** | Up to six large airports to cycle with a double tap (e.g. `LOWG`, `LOWW`); leave unused slots blank. Blanking all six restores the default airport (`kDefaultSiteIdent`) |
+| **Current Location** | Latitude and longitude of the radar device; this is always the radar centre |
 | **Display distances in km** | Ring scale label in **km** instead of the default **NM** (e.g. `74km` vs `40NM`) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
 | **Show terrain** | Green elevation shading under the radar grid (default: on; off keeps the plain background) |
@@ -170,7 +170,7 @@ Edit **`include/config.h`** for hardware and behavior:
 | Wi‑Fi timing | connect attempts, reconnect grace, portal timeout (`0` = no timeout) |
 | BOOT | `kBootPin`, `kBootResetHoldMs`, `kBootTapMinMs` |
 | Display SPI | pins, `kDisplayInvert`, `kDisplayRgbOrder`, `kDisplaySpiWriteHz` |
-| Default location | `kDefaultSiteIdent` (ICAO seeded when the airport list is empty) |
+| Default location | `kDefaultRadarLat` / `kDefaultRadarLon` (overridden by the persisted Current Location) |
 | ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft` |
 | Terrain | `kTerrainGridSize`, `kTerrainTileUrlFmt`, `kTerrainRequestTimeoutMs`, `kTerrainTileIntervalMs`, `kTerrainRetryIntervalMs` |
 

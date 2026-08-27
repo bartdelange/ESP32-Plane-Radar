@@ -49,13 +49,12 @@ constexpr int kDisplayHeight = 240;
  */
 constexpr bool kDisplayRgbOrder = true;
 
-// --- Radar center ---
-/**
- * Airport seeded into slot 0 whenever the site list would otherwise be empty,
- * which is what keeps the list non-empty and the centre always resolvable.
- * Must exist in the generated data::large_airports table.
- */
-constexpr char kDefaultSiteIdent[] = "LOWG";
+// --- Radar centre (overridden through the configuration portal) ---
+// This is the device's physical/current/home location, never an airport
+// selection. Defaults are deliberately ordinary coordinates rather than an
+// airport example; users configure their own location during setup.
+constexpr double kDefaultRadarLat = 52.3676;
+constexpr double kDefaultRadarLon = 4.9041;
 
 // --- Terrain layer (elevation background) ---
 /**

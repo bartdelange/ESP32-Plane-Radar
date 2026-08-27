@@ -70,30 +70,13 @@ bool applyRangeNext() {
   return true;
 }
 
-/** State change plus NVS only, mirroring applyRangeNext(). */
-bool applySiteNext() {
-  if (core::settings::siteCount() < 2) {
-    return false;
-  }
-  core::settings::siteNext();
-  // No core::adsb::clear() here: the onCenterChanged() hook registered in
-  // setup() now covers every path that moves the centre, tap or portal alike.
-  const char* ident = core::settings::siteActiveIdent();
-  if (ident != nullptr) {
-    pf::logf("Site: %s (%.6f, %.6f)\n", ident, core::settings::lat(),
-             core::settings::lon());
-  }
-  scheduleAdsbFetchSoon();
-  return true;
-}
-
 /** Applies the gesture's state change; returns whether a repaint is owed. */
 bool dispatchTap(core::gesture::Tap tap) {
   switch (tap) {
     case core::gesture::Tap::kSingle:
       return applyRangeNext();
     case core::gesture::Tap::kDouble:
-      return applySiteNext();
+      return false;
     default:
       return false;
   }
