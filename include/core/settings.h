@@ -100,7 +100,7 @@ void formatRangePresets(char* buf, size_t len);
 
 // --- Units and overlays ------------------------------------------------------
 
-/** False (the default) means nautical miles. */
+/** True (the default) means kilometres; false means nautical miles. */
 bool useKm();
 bool showRunways();
 bool showRoutes();
@@ -119,7 +119,7 @@ void saveAirlineDisplayFromPortal(const char* select_value);
  *
  * Note the asymmetry with clearLocation(), which resets the current location:
  * this deliberately does NOT reset the range preset. A Wi-Fi credential wipe
- * returns the display to NM with runways and routes on, but leaves
+ * returns the display to km with runways and routes on, but leaves
  * the user's chosen zoom alone.
  */
 void unitsReset();

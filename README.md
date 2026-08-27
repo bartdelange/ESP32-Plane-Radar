@@ -18,6 +18,7 @@ After Wi‑Fi is saved, the device reconnects automatically; the radar runs in t
 | Action | Effect |
 |--------|--------|
 | **Short tap** | Cycle the configured range presets (default 10 → 20 → 40 → 80 → 120 km → 10); the active range is persisted. Refreshes aircraft within ~1 s so a wider fetch radius fills promptly |
+| **Double tap** | Open the configuration portal without erasing saved Wi-Fi credentials; saving reboots back into radar mode |
 | **Hold 3 s** | Clear Wi‑Fi and Current Location, reset units, airline-label choice, and overlay toggles, then reboot into setup; configured ranges remain |
 
 During setup you can also hold BOOT at power-on to force a credential reset (same as the long press).
@@ -30,12 +31,13 @@ During setup you can also hold BOOT at power-on to force a credential reset (sam
 2. Open **`http://plane-radar.local`** (preferred) or **`http://192.168.4.1`** — both are shown on the yellow setup screen; captive portal may open automatically
 3. Set home Wi‑Fi, then save
 
-**Reconfigure anytime** (after the device is on your network):
+**Reconfigure anytime** (without clearing saved Wi-Fi):
 
-1. Open **`http://plane-radar.local`** or **`http://<device-ip>`** (e.g. from your router or serial log at boot)
-2. Change Wi‑Fi, location, range presets, units, airline labels, or runway overlay; save
+1. Double tap BOOT to start the on-demand **`PlaneRadar-Setup`** access point
+2. Connect to it and open **`http://192.168.4.1`** (the captive portal may open automatically)
+3. Change Wi-Fi, location, range presets, units, airline labels, or runway overlay; save
 
-The same portal runs on the setup AP and on the device’s LAN IP while connected to Wi‑Fi. mDNS hostname is `plane-radar` → **plane-radar.local** (`kPortalHostname` in `config.h`). Some clients resolve `.local` slowly; use the IP if needed.
+The portal only runs while setup is active. Normal radar mode does not keep a web server or mDNS service running. Saving restarts the device into radar mode.
 
 **Custom fields** (stored in NVS):
 
@@ -43,7 +45,7 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 |-------|---------|
 | **Current Location** | Latitude and longitude of the radar device; this is always the radar centre |
 | **Radar range presets** | Strictly ascending comma-separated ring-3 distances in km, for example `10,20,40,80,120` |
-| **Display distances in km** | Ring scale label in **km** instead of the default **NM** (e.g. `40km` vs `22NM`) |
+| **Display distances in km** | Ring scale label in **km** by default; clear it to use **NM** (e.g. `40km` vs `22NM`) |
 | **Airline labels** | Hide airline labels, show the local friendly abbreviation, or show the full operator name (route data first, local table as fallback) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
 

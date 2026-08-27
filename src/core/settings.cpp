@@ -33,7 +33,7 @@ double s_lon = config::kDefaultRadarLon;
 uint8_t s_range_index = kDefaultRangeIndex;
 RangePreset s_range_presets[kMaxRangePresets] = {};
 size_t s_range_count = 0;
-bool s_use_km = false;  // default is nautical miles
+bool s_use_km = true;
 bool s_show_runways = true;
 bool s_show_routes = true;
 AirlineDisplay s_airline_display = AirlineDisplay::kNone;
@@ -104,7 +104,7 @@ void init() {
                       : static_cast<uint8_t>(kDefaultRangeIndex < s_range_count
                                                  ? kDefaultRangeIndex
                                                  : 0);
-  s_use_km = KV::getBool(kNsRadar, kKeyKm, false);
+  s_use_km = KV::getBool(kNsRadar, kKeyKm, true);
   s_show_runways = KV::getBool(kNsRadar, kKeyRunways, true);
   s_show_routes = KV::getBool(kNsRadar, kKeyRoutes, true);
   const uint8_t airline_mode = KV::getU8(
@@ -248,7 +248,7 @@ void saveAirlineDisplayFromPortal(const char* select_value) {
 }
 
 void unitsReset() {
-  s_use_km = false;
+  s_use_km = true;
   s_show_runways = true;
   s_show_routes = true;
   s_airline_display = AirlineDisplay::kNone;

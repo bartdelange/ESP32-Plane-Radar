@@ -11,11 +11,10 @@
  *  - Loopback only. Bound to 127.0.0.1 and never INADDR_ANY: this is a
  *    hand-rolled parser reachable from a browser, and it has no business being
  *    on the LAN of whoever is doing UI work in a cafe.
- *  - Single-threaded and non-blocking. It is pumped from wifiLoop(), which runs
- *    on the same thread as the SDL panel and the radar redraw, so no call here
- *    may wait on a client. Reads and writes are bounded by poll() budgets and
- *    each connection is closed after one response (no keep-alive), so a browser
- *    holding a connection open cannot starve the pump.
+ *  - Single-threaded and non-blocking. It is pumped only by the blocking setup
+ *    flow, on the same thread as the SDL panel. Reads and writes are bounded by
+ *    poll() budgets and each connection is closed after one response (no
+ *    keep-alive), so a browser holding a connection open cannot starve it.
  *  - The form carries one field the table does not: the Wi-Fi SSID. The table
  *    deliberately omits it because on the device WiFiManager collects
  *    credentials itself; here nothing else would.

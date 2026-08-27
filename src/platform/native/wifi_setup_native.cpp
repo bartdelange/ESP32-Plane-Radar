@@ -51,16 +51,6 @@ constexpr unsigned long kConnectAnimationMs = 2000;
 bool s_link_up = false;
 bool s_force_config_portal = false;
 
-/**
- * wifiLoop() is called from loop() *and* handed to HttpClient::get() as its
- * cooperative poll hook, so it can be entered from inside a call that a
- * previous wifiLoop() is still on the stack of. Serving a portal request from
- * within a portal request would re-enter the accept loop with a half-served
- * connection, so the nested call is simply dropped — the outer pump picks the
- * work up milliseconds later, which no human at a browser can perceive.
- */
-bool s_in_wifi_loop = false;
-
 std::string storedSsid() {
   return pf::KeyValueStore::getString(kWifiKvNamespace, kWifiKvSsidKey, "");
 }
@@ -117,6 +107,7 @@ std::string runPortalUntilCredentials() {
     bootButtonPollLongPress();
     portalServerPump();
     if (portalServerConsumeCredentials(&ssid) && !ssid.empty()) {
+      portalServerStop();
       return ssid;
     }
     pf::sleepMs(10);
@@ -152,7 +143,6 @@ void wifiResetCredentialsAndReboot() {
 
 bool wifiSetupConnect() {
   bootButtonInit();
-  portalServerStart();
 
   const bool force_portal = consumeForceConfigPortal();
   if (force_portal) {
@@ -187,16 +177,18 @@ bool wifiReconnect() {
   return true;
 }
 
+bool wifiOpenConfigPortal() {
+  bootButtonInit();
+  pf::logf("Opening configuration portal\n");
+  statusScreenPortal();
+  runPortalUntilCredentials();
+  pf::logf("Configuration saved — restarting radar\n");
+  pf::sleepMs(250);
+  pf::reboot();
+}
+
 void wifiLoop() {
-  if (s_in_wifi_loop) {
-    return;  // See s_in_wifi_loop for why the nested call is dropped.
-  }
-  s_in_wifi_loop = true;
-  // Device order: the button is polled unconditionally, before the portal is
-  // serviced, so a long hold wins over a slow request and still works with no
-  // link. bootButtonPollLongPress() may not return (long hold -> reset ->
-  // exit), which is why nothing below it is required for correctness.
+  // As on device, normal radar mode has no portal server to service. A long
+  // hold remains live with or without a network connection.
   bootButtonPollLongPress();
-  portalServerPump();
-  s_in_wifi_loop = false;
 }

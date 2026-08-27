@@ -76,6 +76,7 @@ bool dispatchTap(core::gesture::Tap tap) {
     case core::gesture::Tap::kSingle:
       return applyRangeNext();
     case core::gesture::Tap::kDouble:
+      wifiOpenConfigPortal();
       return false;
     default:
       return false;

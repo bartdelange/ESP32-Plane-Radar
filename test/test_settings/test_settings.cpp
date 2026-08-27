@@ -24,6 +24,7 @@ void test_fresh_store_uses_the_default_current_location(void) {
   cs::init();
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLat, cs::lat());
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLon, cs::lon());
+  TEST_ASSERT_TRUE(cs::useKm());
 }
 
 void test_current_location_is_persisted_and_validated(void) {
@@ -60,7 +61,7 @@ void test_checkbox_rejects_absent_and_unknown(void) {
 
 // --- formatRing3Label --------------------------------------------------------
 
-void test_format_nm_is_the_default_and_is_exact(void) {
+void test_format_nm_is_exact(void) {
   char buf[12];
   const char* expected[] = {"5NM", "11NM", "22NM", "43NM", "65NM"};
   for (size_t i = 0; i < cs::rangeCount(); ++i) {
@@ -174,14 +175,14 @@ void test_rangeNext_cycles_and_wraps(void) {
 void test_unitsReset_leaves_range_alone(void) {
   // Deliberate asymmetry: a Wi-Fi wipe resets units and the runway overlay but
   // keeps the user's chosen zoom.
-  cs::saveKmFromPortal("T");
+  cs::saveKmFromPortal(nullptr);
   cs::saveRunwaysFromPortal(nullptr);
   cs::rangeNext();
   const uint8_t range_before = cs::rangeIndex();
 
   cs::unitsReset();
 
-  TEST_ASSERT_FALSE(cs::useKm());
+  TEST_ASSERT_TRUE(cs::useKm());
   TEST_ASSERT_TRUE(cs::showRunways());
   TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kNone),
                           static_cast<uint8_t>(cs::airlineDisplay()));
@@ -232,7 +233,7 @@ int main(int, char**) {
   RUN_TEST(test_checkbox_accepts_conventional_on);
   RUN_TEST(test_checkbox_rejects_absent_and_unknown);
 
-  RUN_TEST(test_format_nm_is_the_default_and_is_exact);
+  RUN_TEST(test_format_nm_is_exact);
   RUN_TEST(test_format_km_when_toggled);
 
   RUN_TEST(test_outer_km_is_ring3_over_three_quarters);

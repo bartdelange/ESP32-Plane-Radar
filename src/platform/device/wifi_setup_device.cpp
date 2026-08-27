@@ -408,6 +408,9 @@ bool openConfigPortal() {
     }
     delay(10);
   }
+#ifdef WM_MDNS
+  MDNS.end();
+#endif
   return wifiLinkUp();
 }
 
@@ -466,6 +469,12 @@ bool wifiReconnect() {
   initBootButton();
   Serial.println("WiFi reconnecting...");
   return connectSavedNetwork(true);
+}
+
+bool wifiOpenConfigPortal() {
+  initBootButton();
+  Serial.println("Opening configuration portal");
+  return openConfigPortal();
 }
 
 void wifiLoop() {
