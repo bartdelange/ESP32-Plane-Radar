@@ -7,7 +7,6 @@
 #include <cstdlib>
 
 #include "config.h"
-#include "core/frame_ownership.h"
 #include "core/geo.h"
 #include "core/platform.h"
 #include "ui/display.h"
@@ -20,7 +19,6 @@
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
-#include "ui/terrain_overlay.h"
 
 namespace ui {
 namespace radar {
@@ -39,7 +37,6 @@ uint16_t kColorVertDescent = 0xFD20;
 uint16_t kColorTrackTrail[4] = {};
 uint16_t kColorRunway = 0x4D5F;
 uint16_t kColorRunwayLabel = 0x7DFF;
-uint16_t kColorTerrain[kTerrainBandCount] = {};
 
 }  // namespace radar
 
@@ -65,7 +62,6 @@ lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
 bool s_frame_ready = false;
 bool s_frame_attempted = false;
-core::frame::Ownership s_frame_ownership;
 bool s_tag_cycle_active = false;
 unsigned long s_tag_cycle_phase_drawn = 0;
 
@@ -218,10 +214,6 @@ void initPalette() {
       displayColor565(radar::kRunwayR, radar::kRunwayG, radar::kRunwayB);
   radar::kColorRunwayLabel = displayColor565(
       radar::kRunwayLabelR, radar::kRunwayLabelG, radar::kRunwayLabelB);
-  for (int i = 0; i < radar::kTerrainBandCount; ++i) {
-    radar::kColorTerrain[i] = displayColor565(
-        radar::kTerrainBandR[i], radar::kTerrainBandG[i], radar::kTerrainBandB[i]);
-  }
 }
 
 /** Current view, rebuilt on demand from the live location and range preset. */
@@ -710,7 +702,6 @@ void drawStaticGrid(Gfx& gfx) {
   const int grid_r = radar::kGridOuterRadius;
 
   gfx.fillScreen(radar::kColorBackground);
-  terrain::drawTerrainBackground(gfx);
   drawRings(cx, cy, grid_r);
   drawCrosshairs(cx, cy, grid_r, radar::kColorGrid);
   initPalette();
@@ -729,20 +720,12 @@ bool ensureFrameSprite() {
     return false;
   }
   s_frame_attempted = true;
-  constexpr size_t kFrameBytes =
-      static_cast<size_t>(radar::kSize) * radar::kSize * 2;
-  core::platform::logf("radar: frame sprite request=%u bytes\n",
-                       static_cast<unsigned>(kFrameBytes));
-  core::platform::logHeapState("frame-before");
   s_frame.setColorDepth(16);
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     core::platform::logf("radar: frame sprite alloc failed\n");
-    core::platform::logHeapState("frame-failed");
     return false;
   }
   s_frame_ready = true;
-  s_frame_ownership.allocated();
-  core::platform::logHeapState("frame-after");
   return true;
 }
 
@@ -750,31 +733,21 @@ bool ensureFrameSprite() {
 // sprite, then blit it to the panel in a single pushSprite. Because the panel
 // is updated in one pass, labels never show an erase/redraw gap — no flicker.
 void renderFrame() {
-  if (!s_frame_ownership.beginComposition()) {
-    core::platform::logf("radar: frame is busy; draw deferred\n");
-    return;
-  }
   drawStaticGrid(s_frame);  // opens its own DrawScope(s_frame)
   {
     const DrawScope scope(s_frame);
     drawAircraft();
   }
-  if (!s_frame_ownership.beginTransfer()) return;
   s_frame.pushSprite(0, 0);
-  // In pinned LovyanGFX 1.2.26, pushSprite() passes this DMA-capable sprite to
-  // Panel_LCD::writeImage(..., use_dma=true). Bus_SPI::writeBytes starts DMA,
-  // while endWrite/endTransaction does not wait. The next loop can lend the
-  // same bytes to PNG before a 115,200-byte transfer at 40 MHz has completed.
+  // pushSprite uses asynchronous DMA for this buffer. Keep composition from
+  // modifying it until the panel transfer has consumed the complete frame.
   tft.waitDMA();
-  s_frame_ownership.finishTransfer();
   tft.setTextDatum(textdatum_t::top_left);
 }
 
 }  // namespace
 
 bool radarDisplayInitFrame() { return ensureFrameSprite(); }
-
-bool radarDisplayFrameReady() { return s_frame_ready; }
 
 void radarDisplayDraw() {
   initPalette();
@@ -808,28 +781,6 @@ void radarDisplayTick() {
   const unsigned long phase =
       core::platform::nowMs() / config::kTagCycleIntervalMs;
   if (phase != s_tag_cycle_phase_drawn) radarDisplayRefreshAircraft();
-}
-
-uint8_t* radarDisplayFrameScratch(size_t need_bytes) {
-  if (!ensureFrameSprite()) {
-    return nullptr;
-  }
-  constexpr size_t kFrameBytes =
-      static_cast<size_t>(radar::kSize) * radar::kSize * 2;
-  if (need_bytes > kFrameBytes) {
-    return nullptr;
-  }
-  // Defensive even though renderFrame waits: no future push implementation may
-  // turn this lease into an implicit race with an outstanding transfer.
-  tft.waitDMA();
-  if (!s_frame_ownership.acquireScratch()) {
-    return nullptr;
-  }
-  return static_cast<uint8_t*>(s_frame.getBuffer());
-}
-
-void radarDisplayFrameScratchRelease() {
-  s_frame_ownership.releaseScratch();
 }
 
 }  // namespace ui

@@ -14,10 +14,7 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <esp_heap_caps.h>
-
 #include <cstring>
-#include <climits>
 
 namespace core::platform {
 
@@ -30,32 +27,6 @@ bool s_request_active = false;
 void poll(PollFn fn) {
   if (fn != nullptr) {
     fn();
-  }
-}
-
-const char* requestCategory(const char* url) {
-  if (url != nullptr && strstr(url, "opendata.adsb.fi") != nullptr)
-    return "ADSB";
-  if (url != nullptr && strstr(url, "api.adsbdb.com") != nullptr)
-    return "ROUTE";
-  if (url != nullptr && strstr(url, "elevation-tiles-prod") != nullptr)
-    return "TERRAIN";
-  return "OTHER";
-}
-
-void logHeap(const char* category, const char* event, int status) {
-  const size_t free_heap = ESP.getFreeHeap();
-  const size_t free_8bit = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-  const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-  if (status == INT_MIN) {
-    logf("HTTP %s %s free=%u free8=%u largest=%u\n", category, event,
-         static_cast<unsigned>(free_heap), static_cast<unsigned>(free_8bit),
-         static_cast<unsigned>(largest));
-  } else {
-    logf("HTTP %s %s status=%d free=%u free8=%u largest=%u\n", category,
-         event, status, static_cast<unsigned>(free_heap),
-         static_cast<unsigned>(free_8bit),
-         static_cast<unsigned>(largest));
   }
 }
 
@@ -149,9 +120,8 @@ class StreamBodyReader : public BodyReader {
 
 int HttpClient::getStatus(const char* url, BodyFn on_body,
                           unsigned long timeout_ms, PollFn fn) {
-  const char* category = requestCategory(url);
   if (s_request_active) {
-    logf("HTTP %s deferred: another request is active\n", category);
+    logf("http: request deferred because another request is active\n");
     return 0;
   }
   struct ActiveRequest {
@@ -159,14 +129,6 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
     ~ActiveRequest() { s_request_active = false; }
   } active_request;
   int result = 0;
-  int log_status = 0;
-  struct RequestLog {
-    const char* category;
-    int* result;
-    ~RequestLog() { logHeap(category, "end", *result); }
-  } request_log{category, &log_status};
-  logHeap(category, "start", INT_MIN);
-
   WiFiClientSecure client;
   client.setInsecure();
 
@@ -187,7 +149,6 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
   // NOT_CONNECTED used to create a new TLS handshake every ~5 ms after an
   // mbedTLS allocation failure; subsystem-level cadence/backoff owns retries.
   const int code = http.GET();
-  log_status = code;
   if (code != HTTP_CODE_OK && code != HTTP_CODE_NOT_FOUND) {
     logf("http: HTTP %d\n", code);
     http.end();
@@ -205,7 +166,6 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
   const bool ok = on_body(body);
   http.end();
   result = ok ? code : 0;
-  log_status = result;
   return result;
 }
 

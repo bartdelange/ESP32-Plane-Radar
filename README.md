@@ -9,7 +9,7 @@ Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (
 ## What it does
 
 1. **Wi‑Fi setup** (if needed) — captive portal on AP **`PlaneRadar-Setup`**
-2. **Radar** — live aircraft from [adsb.fi](https://opendata.adsb.fi/) on a sonar-style grid, over an optional green terrain relief from [AWS Open Data terrain tiles](https://registry.opendata.aws/terrain-tiles/)
+2. **Radar** — live aircraft from [adsb.fi](https://opendata.adsb.fi/) on a sonar-style grid with airport/runway overlays
 
 After Wi‑Fi is saved, the device reconnects automatically; the radar runs in the main loop with periodic ADS-B updates (~3 s).
 
@@ -33,7 +33,7 @@ During setup you can also hold BOOT at power-on to force a credential reset (sam
 **Reconfigure anytime** (after the device is on your network):
 
 1. Open **`http://plane-radar.local`** or **`http://<device-ip>`** (e.g. from your router or serial log at boot)
-2. Change Wi‑Fi, location, range presets, units, airline labels, runway overlay, or terrain layer; save
+2. Change Wi‑Fi, location, range presets, units, airline labels, or runway overlay; save
 
 The same portal runs on the setup AP and on the device’s LAN IP while connected to Wi‑Fi. mDNS hostname is `plane-radar` → **plane-radar.local** (`kPortalHostname` in `config.h`). Some clients resolve `.local` slowly; use the IP if needed.
 
@@ -46,7 +46,6 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 | **Display distances in km** | Ring scale label in **km** instead of the default **NM** (e.g. `40km` vs `22NM`) |
 | **Airline labels** | Hide airline labels, show the local friendly abbreviation, or show the full operator name (route data first, local table as fallback) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
-| **Show terrain** | Green elevation shading under the radar grid (default: on; off keeps the plain background) |
 
 After a reset, the device reboots and shows the setup screen immediately (no “Connecting” loop on stale credentials).
 
@@ -102,33 +101,11 @@ development tool, not a product.
 
 ### Grid
 
-- Dark blue background (terrain shading paints over it when enabled), subdued green rings and crosshairs
+- Dark blue background with subdued green rings and crosshairs
 - White **N / S / E / W** at the bezel; range label on the **east** spoke (ring 3 = ¾ of outer radius)
 - White center dot
 
 Layout and colors: `include/ui/radar_theme.h`.
-
-### Terrain
-
-- Green-shaded elevation background under the grid: hypsometric bands apply only to explicit land, including dry land below sea level; water keeps the plain background
-- Elevation from the [AWS Open Data terrain tiles](https://registry.opendata.aws/terrain-tiles/) bucket (`terrarium` PNGs — no key, no rate limit, no sign-up): each 256×256 tile carries 65 536 bare-earth samples, encoded per pixel as `R*256 + G + B/256 - 32768` metres
-- Land/water comes from an embedded 512×512 regional mask generated from [Natural Earth](https://www.naturalearthdata.com/) 1:10m land and lake polygons (public domain). The maintained `NL` region includes the Netherlands and its widest radar view; add future regions in `scripts/build_land_mask.py`
-- A view needs only the **1–4 tiles** its bounding box touches; the zoom is chosen per view as the highest one whose tiles still cover it in a 2×2 block, so wider ranges get coarser terrain and the 10 NM preset the finest
-- Tiles are decoded as they arrive and resampled straight into a **41×41 grid** (3.4 KB elevation + 211-byte land bitset) — the raster is never held in RAM. The regional mask costs 32 KiB flash and no runtime network traffic
-- One tile per main-loop pass, so the radar keeps running while terrain loads; tiles are 60–150 KB, so a full grid arrives within a few seconds
-- **One** grid is cached, for the view on screen; changing range or centre re-fetches. A failed tile is retried in place, and a download that keeps failing backs off for 60 s
-- Needs Wi‑Fi for elevation; until the grid arrives the radar runs normally on the plain background. A view outside the maintained land-mask regions deliberately omits terrain instead of guessing water from elevation
-- Toggle with **Show terrain** in the Wi‑Fi setup portal (default: on)
-
-Tiles come over `https://` — the bucket policy requires it and answers plain HTTP with 403 — so a tile fetch needs a TLS session (~30 KB) and a decoder (~36 KB) while the 115 KB frame sprite is already up. On the ESP32-C3 that is about 13 KB more than the heap has, which makes memory, not bandwidth, this layer's real constraint.
-
-Freeing the sprite for the duration does not solve it: measured, the TLS path leaves a few hundred bytes stranded inside the 115 KB hole (largest free block comes back as 114 676 against the 115 200 needed) and TCP `TIME_WAIT` holds them there, so the sprite never returns and every later frame has to be painted straight onto the panel. So the decoder in `platform/png_decode.cpp` — own inflate, no pngle — **allocates nothing at all**: it works in scratch the display lends it, which is the frame sprite's own pixels. Nobody is compositing a frame while a tile decodes, the panel keeps showing the last one blitted, and the frame is repainted when the grid lands. Nothing is allocated at run time, so nothing can fail to be allocated.
-
-Being our own decoder, it also verifies zlib's Adler-32 over every tile: structural checks alone can pass on a stream that inflates to the wrong bytes, and the failure mode that hides behind is terrain that looks perfectly plausible. A tile that fails it is refused and retried like any other bad tile.
-
-Upsampling the grid to the frame is fixed-point for the same reason of scale: it touches 57 600 pixels per redraw, and the C3 core has no FPU, so in floats it measured 209 ms of a 297 ms frame against 37 ms in integers.
-
-Tiles replaced per-point elevation queries, which billed hundreds of coordinates per view: 7 rate-limited requests paced 12 s apart, about 1.5 min per view, and HTTP 429 when the budget slipped.
 
 ### Range presets
 
@@ -148,13 +125,12 @@ malformed saved data falls back to the defaults.
 
 - The compiled data pack contains a common worldwide-large-airport base plus medium and small airports for its selected region (currently `NL`) from OurAirports; all open runway strips in range (helipads excluded)
 - Teal runway lines with one ICAO label per airport (e.g. `KJFK`); toggle in the Wi‑Fi setup portal
-- Regenerate both airport and Natural Earth land-mask data from the same region definition: `python3 scripts/build_region_pack.py --region NL`
+- Regenerate the airport data for the selected region: `python3 scripts/build_region_pack.py --region NL`
 
 The firmware compiles one pack at a time; there is no runtime region selector or
 downloader. Add or adjust maintained regions only in `scripts/regions.py`, then
-run the coordinator above. This keeps airport coverage and land-mask bounds from
-drifting apart. The compact 512×512 land bitset preserves the existing terrain
-grid and rendering behavior. Natural Earth data is public domain.
+run the coordinator above. Region selection controls which medium and small
+airports supplement the worldwide large-airport base.
 
 ### Aircraft
 
@@ -186,7 +162,6 @@ Edit **`include/config.h`** for hardware and behavior:
 | Default location | `kDefaultRadarLat` / `kDefaultRadarLon` (overridden by the persisted Current Location) |
 | ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft`, `kVerticalRateDeadbandFpm` |
 | Routes/tracks | `kRouteLookupsPerCycle`, `kRouteCacheSize`, route TTLs, `kTrackHistoryDepth`, `kTrackHistoryMax`, `kTrackHistoryTtlMs`, `kTagCycleIntervalMs` |
-| Terrain | `kTerrainGridSize`, `kTerrainTileUrlFmt`, `kTerrainRequestTimeoutMs`, `kTerrainTileIntervalMs`, `kTerrainRetryIntervalMs` |
 
 Default range presets and validation limits live in `include/core/settings.h`.
 
@@ -202,40 +177,32 @@ include/
     adsb.h, aircraft.h     — ADS-B fetch and decode
     route.h                — adsbdb route/operator cache and lookup
     track_history.h        — bounded portable aircraft track history
-    terrain.h              — land/water-aware terrain grid fetch and cache
-    land_water.h           — generated regional land-mask lookup
-    land_mask.h            — generated compact regional raster data
     region_pack.h          — generated metadata for the selected compiled pack
     portal_params.h        — config-portal field table (one per destination)
     large_airports.h
   ui/                      — LovyanGFX drawing, shared by both destinations
     display.h, display_font.h, radar_theme.h, radar_range.h
-    radar_display.h, runway_overlay.h, terrain_overlay.h, status_screens.h
+    radar_display.h, runway_overlay.h, status_screens.h
   platform/
     wifi_setup.h           — radio + BOOT button seam
-    png_decode.h           — streaming PNG decoder, decodes into lent scratch
     device/                — pins.h, lgfx_config_device.hpp
     native/                — lgfx_config_native.hpp
 data/
   ui_font.vlw              — embedded smooth UI font (Noto Sans Bold)
 scripts/
   regions.py                 — shared maintained-region definitions
-  build_region_pack.py       — regenerate the selected airport + land-mask pack
+  build_region_pack.py       — regenerate the selected airport pack
   build_large_airports.py
-  build_land_mask.py         — Natural Earth regional mask generator
-  gen_png_fixtures.py        — PNG test fixtures for native_test_png
 src/
   main.cpp                 — setup()/loop(), shared verbatim
-  core/                    — settings, geo, adsb, terrain, portal_params, airport data
-  ui/                      — radar_display, runway_overlay, terrain_overlay,
+  core/                    — settings, geo, adsb, portal_params, airport data
+  ui/                      — radar_display, runway_overlay,
                              status_screens, display_font
   platform/
     device/                — NVS, HTTPClient, WiFiManager, GC9A01, embedded font
     native/                — JSON settings, libcurl, SDL panel, keyboard BOOT,
                              simulated radio, localhost config portal
-test/                      — host unit tests (make test); the tile download
-                             flow and the PNG decoder need envs of their own,
-                             native_test_fetch and native_test_png
+test/                      — host unit tests (`make test`)
 ```
 
 ## Wiring (GC9A01 ↔ ESP32-C3 Super Mini)
@@ -297,11 +264,9 @@ make debug-device-test  # on-device GDB, halt at setup()
 make debug-device-run   # on-device GDB, board runs
 make native             # emulator run
 make test               # all host unit tests
-make test-live          # opt-in live terrain tile fetch (needs internet)
 ```
 
-- PlatformIO envs: **`supermini`** (release), **`supermini_debug`** (`-Og -g`, on-device GDB), **`native`** / **`native_test`** / **`native_test_fetch`** / **`native_test_png`** / **`native_test_live`** (host)
-- `native_test_fetch` runs the tile download state machine against a scripted HTTP client, fake clock and fake PNG decoder — no network. `native_test_png` runs the real decoder against generated PNGs (every filter, all three DEFLATE block types, split IDATs, truncated and corrupt streams, a stream that inflates to the wrong bytes with a valid structure, one that runs past the declared height) plus a full-size tile, and checks it writes nothing outside the scratch it was lent; fixtures come from `scripts/gen_png_fixtures.py`. `native_test_live` (`make test-live`) is an opt-in smoke test that pulls a real tile from the AWS bucket, so it stays out of `make test`
+- PlatformIO envs: **`supermini`** (release), **`supermini_debug`** (`-Og -g`, on-device GDB), and **`native`** / **`native_test`** (host)
 - Serial: **115200** baud
 - USB CDC on boot enabled in `platformio.ini` for the Super Mini
 

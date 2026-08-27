@@ -3,7 +3,6 @@
 #include <unity.h>
 
 #include "core/airport_find.h"
-#include "core/land_mask.h"
 #include "core/large_airports.h"
 #include "core/region_pack.h"
 
@@ -20,18 +19,11 @@ size_t airportIndex(const char* ident) {
 
 }  // namespace
 
-void test_compiled_pack_metadata_matches_land_mask(void) {
+void test_compiled_pack_metadata_identifies_airport_region(void) {
   TEST_ASSERT_EQUAL_STRING("NL", data::region_pack::kCode);
   TEST_ASSERT_EQUAL_STRING("Netherlands", data::region_pack::kName);
   TEST_ASSERT_EQUAL_UINT32(1, data::region_pack::kCountryCount);
   TEST_ASSERT_EQUAL_STRING("NL", data::region_pack::kCountries[0]);
-  TEST_ASSERT_EQUAL_UINT32(1, data::land_mask::kRegionCount);
-  TEST_ASSERT_EQUAL_STRING(data::region_pack::kCode,
-                           data::land_mask::kRegions[0].name);
-  TEST_ASSERT_EQUAL_UINT16(data::region_pack::kMaskWidth,
-                           data::land_mask::kRegions[0].width);
-  TEST_ASSERT_EQUAL_UINT16(data::region_pack::kMaskHeight,
-                           data::land_mask::kRegions[0].height);
 }
 
 void test_airport_data_has_base_and_regional_partitions(void) {
@@ -59,7 +51,7 @@ void tearDown(void) {}
 
 int main(int, char**) {
   UNITY_BEGIN();
-  RUN_TEST(test_compiled_pack_metadata_matches_land_mask);
+  RUN_TEST(test_compiled_pack_metadata_identifies_airport_region);
   RUN_TEST(test_airport_data_has_base_and_regional_partitions);
   RUN_TEST(test_lookup_searches_both_sorted_partitions);
   return UNITY_END();

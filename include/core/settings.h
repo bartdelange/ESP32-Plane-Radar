@@ -73,7 +73,7 @@ using CenterChangedFn = void (*)();
  * moved the centre: the tap handler used to clear the ADS-B store by hand and
  * the portal path did not, so a portal-driven move plotted stale traffic
  * against the new centre. Kept as a function pointer to keep core::settings
- * free of core/adsb.h and core/terrain.h.
+ * free of core/adsb.h and UI headers.
  */
 void setCenterChangedFn(CenterChangedFn fn);
 
@@ -103,14 +103,12 @@ void formatRangePresets(char* buf, size_t len);
 /** False (the default) means nautical miles. */
 bool useKm();
 bool showRunways();
-bool showTerrain();
 bool showRoutes();
 AirlineDisplay airlineDisplay();
 
 /** Apply a WiFi portal checkbox value and persist it. */
 void saveKmFromPortal(const char* checkbox_value);
 void saveRunwaysFromPortal(const char* checkbox_value);
-void saveTerrainFromPortal(const char* checkbox_value);
 /** Apply the portal selector: 0 off, 1 on. */
 void saveRouteDisplayFromPortal(const char* select_value);
 /** Apply the portal selector: 0 none, 1 full name, 2 friendly abbreviation. */
@@ -121,7 +119,7 @@ void saveAirlineDisplayFromPortal(const char* select_value);
  *
  * Note the asymmetry with clearLocation(), which resets the current location:
  * this deliberately does NOT reset the range preset. A Wi-Fi credential wipe
- * returns the display to NM with runways, terrain and routes on, but leaves
+ * returns the display to NM with runways and routes on, but leaves
  * the user's chosen zoom alone.
  */
 void unitsReset();

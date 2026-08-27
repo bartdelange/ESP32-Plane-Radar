@@ -12,9 +12,7 @@
 #include "core/adsb.h"
 #include "core/settings.h"
 #include "core/tap_gesture.h"
-#include "core/terrain.h"
 #include "core/track_history.h"
-#include "platform/png_decode.h"
 #include "platform/wifi_setup.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
@@ -28,10 +26,6 @@ bool g_radar_visible = false;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
-bool g_adsb_has_succeeded = false;
-bool g_terrain_download_active = false;
-bool g_logged_radar_heap = false;
-bool g_logged_no_terrain_scratch = false;
 
 void showRadarIfConnected() {
   if (!wifiIsConnected()) {
@@ -40,10 +34,6 @@ void showRadarIfConnected() {
   }
   ui::radarDisplayDraw();
   g_radar_visible = true;
-  if (!g_logged_radar_heap) {
-    pf::logHeapState("radar-frame");
-    g_logged_radar_heap = true;
-  }
 }
 
 /**
@@ -59,16 +49,13 @@ void scheduleAdsbFetchSoon() {
 }
 
 void onRangeChanged() {
-  core::terrain::clear();
   scheduleAdsbFetchSoon();
 }
 
 /** Fired by core::settings whenever lat()/lon() actually move. */
 void onCenterChanged() {
   core::adsb::clear();
-  core::terrain::clear();
   core::track::clear();
-  g_adsb_has_succeeded = false;
   g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
 }
 
@@ -104,7 +91,7 @@ void handleBootButton() {
     // Load-bearing, not incidental: resolve whatever gesture is already
     // pending at the NEW tap's own release timestamp before recording that
     // tap. Polling at "now" instead would let a single left pending from a
-    // stale blocking window (an in-flight ADS-B fetch or terrain tile)
+    // stale blocking window (for example an in-flight ADS-B fetch)
     // get silently swallowed the moment an unrelated later tap shows up,
     // instead of correctly resolving as its own single.
     if (dispatchTap(core::gesture::tapPoll(tap_ms))) {
@@ -124,63 +111,22 @@ void handleBootButton() {
 }
 
 /**
- * Poll hook handed to core::adsb / core::terrain for use during blocking HTTP
+ * Poll hook handed to core::adsb for use during blocking HTTP
  * I/O. Forwards to wifiLoop() and nothing else — no tap consumption, no
  * gesture dispatch, no draw. That absence is structural, not just documented:
- * no gesture code is reachable from here, so a frame can never be composed
- * while the PNG decoder holds the frame sprite as scratch. See
- * docs/plan/findings-01-bugs.md (the compose-during-decode invariant) and
- * findings-02-memory.md MEM-10 (which borrows the same scratch), both of
- * which depend on this poll path staying draw-free.
+ * an HTTP poll cannot unexpectedly repaint the display from inside a request.
  */
 void pollWifi() { wifiLoop(); }
 
-/**
- * Download the terrain grid for the current view when it is missing, then
- * repaint so the new background shows. gridReady() makes the common case a
- * cheap no-op, and ensureGrid() rate-limits retries after a failed download,
- * so this is safe to call every loop iteration.
- */
-void maybeFetchTerrain() {
-  if (!g_adsb_has_succeeded || !g_radar_visible || !wifiIsConnected() ||
-      !ui::radar::showTerrain()) {
-    return;
-  }
-  if (!ui::radarDisplayFrameReady()) {
-    if (!g_logged_no_terrain_scratch) {
-      pf::logf("terrain: disabled because frame scratch is unavailable\n");
-      g_logged_no_terrain_scratch = true;
-    }
-    return;
-  }
-  const double lat = core::settings::lat();
-  const double lon = core::settings::lon();
-  const uint8_t range_idx = ui::radar::rangeIndex();
-  if (core::terrain::gridReady(lat, lon, range_idx)) {
-    return;
-  }
-  const bool ready = core::terrain::ensureGrid(lat, lon, range_idx,
-                                               ui::radar::terrainHalfSpanKm());
-  const bool active = core::terrain::downloadActive();
-  if (ready || (g_terrain_download_active && !active)) {
-    ui::radarDisplayDraw();
-  }
-  g_terrain_download_active = active;
-}
-
-bool fetchAndDrawAircraft() {
+void fetchAndDrawAircraft() {
   const float fetch_km = ui::radar::fetchRadiusKm();
   if (!core::adsb::fetchUpdate(core::settings::lat(), core::settings::lon(),
                                fetch_km)) {
-    pf::logHeapState("adsb-after");
     handleBootButton();
-    return false;
+    return;
   }
-  g_adsb_has_succeeded = true;
-  pf::logHeapState("adsb-after");
   ui::radarDisplayRefreshAircraft();
   handleBootButton();
-  return true;
 }
 
 }  // namespace
@@ -191,30 +137,20 @@ void setup() {
 
   bootButtonInit();
   displayInit();
-  pf::logHeapState("display-init");
   ui::radarDisplayInitFrame();
   statusScreenStarting();
   if (wifiShowsSetupScreenOnBoot()) {
     statusScreenPortal();
   }
   core::settings::init();
-  pf::logHeapState("settings-init");
   // After init(), not before: init() seeds s_lat/s_lon from storage, and the
   // hook must not fire on that initial load, only on later moves.
   core::settings::setCenterChangedFn(onCenterChanged);
   core::settings::setRangeChangedFn(onRangeChanged);
   core::adsb::setPollFn(pollWifi);
-  core::terrain::setPollFn(pollWifi);
-  core::terrain::setPngDecoder(platform_png::decode);
-  platform_png::setScratch(ui::radarDisplayFrameScratch,
-                           ui::radarDisplayFrameScratchRelease);
-
-  pf::logHeapState("wifi-before");
   if (wifiSetupConnect()) {
-    pf::logHeapState("wifi-connected");
     showRadarIfConnected();
-    // The first outbound HTTPS operation after association is ADS-B. Terrain
-    // remains gated until that request succeeds.
+    // Fetch immediately after association instead of waiting one full period.
     g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
   }
 }
@@ -227,7 +163,6 @@ void loop() {
     if (g_radar_visible) {
       pf::logf("WiFi lost — will reconnect\n");
       g_radar_visible = false;
-      g_adsb_has_succeeded = false;
     }
 
     if (g_wifi_down_since == 0) {
@@ -246,19 +181,12 @@ void loop() {
     }
   } else {
     g_wifi_down_since = 0;
-    bool adsb_attempted = false;
     if (!g_radar_visible) {
       showRadarIfConnected();
     } else if (pf::nowMs() - g_last_adsb_fetch_ms >=
                config::kAdsbFetchIntervalMs) {
       g_last_adsb_fetch_ms = pf::nowMs();
-      adsb_attempted = true;
       fetchAndDrawAircraft();
-    }
-    // Let all request-local TLS/HTTP objects unwind before terrain borrows the
-    // same constrained heap on a later loop iteration.
-    if (!adsb_attempted) {
-      maybeFetchTerrain();
     }
     ui::radarDisplayTick();
   }

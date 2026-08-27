@@ -86,7 +86,7 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
                           unsigned long timeout_ms, PollFn fn) {
   // curl pushes the body at us through a write callback, so the host collects
   // it and replays it to the decoder afterwards. The device streams instead,
-  // where holding tens of kilobytes is what runs the heap out; here it is free.
+  // Keep the native transport behavior aligned with the streaming device path.
   std::string body;
 
   ensureGlobalInit();

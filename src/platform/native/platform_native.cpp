@@ -43,8 +43,6 @@ void logf(const char* fmt, ...) {
   va_end(args);
 }
 
-void logHeapState(const char*) {}
-
 void reboot() {
   // A real process exit, not an in-process restart: see the rationale on the
   // declaration in core/platform.h.

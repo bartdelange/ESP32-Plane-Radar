@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Regenerate the compiled airport + land-mask pack from one region choice."""
+"""Regenerate the compiled airport pack from one region choice."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-import build_land_mask
 import build_large_airports
 from regions import DEFAULT_REGION, get_region, render_header
 
@@ -24,7 +23,6 @@ def main() -> int:
         parser.error(str(error))
     REGION_HEADER.write_text(render_header(region), encoding="utf-8")
     build_large_airports.generate(region)
-    build_land_mask.generate(region)
     print(f"Compiled region pack: {region.name} ({region.code})")
     return 0
 

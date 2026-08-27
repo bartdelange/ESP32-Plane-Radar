@@ -394,10 +394,8 @@ bool openConfigPortal() {
   delay(50);
   statusScreenPortal();
   refreshPortalParamDefaults();
-  core::platform::logHeapState("config-portal-before");
   s_wm.setConfigPortalBlocking(false);
   s_wm.startConfigPortal(config::kPortalApName);
-  core::platform::logHeapState("config-portal-active");
   while (s_wm.getConfigPortalActive()) {
     bootButtonPollLongPress();
     if (s_wm.process()) {
