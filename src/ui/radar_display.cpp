@@ -150,14 +150,12 @@ void initLabelMetrics() {
   s_scale_label_h = tft.fontHeight();
   s_scale_label_max_w = 0;
   char label[12];
-  for (size_t i = 0; i < radar::kRangePresetCount; ++i) {
-    for (bool miles : {false, true}) {
-      radar::formatRing3Label(label, sizeof(label), radar::kRangePresets[i].ring3_km,
-                              miles);
-      const int w = tft.textWidth(label);
-      if (w > s_scale_label_max_w) {
-        s_scale_label_max_w = w;
-      }
+  for (bool miles : {false, true}) {
+    radar::formatRing3Label(label, sizeof(label),
+                            core::settings::kMaxRangeKm, miles);
+    const int w = tft.textWidth(label);
+    if (w > s_scale_label_max_w) {
+      s_scale_label_max_w = w;
     }
   }
 

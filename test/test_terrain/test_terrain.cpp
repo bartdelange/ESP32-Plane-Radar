@@ -46,10 +46,11 @@ constexpr double kLon = 15.4062;
 constexpr float kScreenEdgeScale = 120.0f / 107.0f;
 
 constexpr float halfSpanKm(size_t preset) {
-  return core::settings::kRangePresets[preset].outer_km * kScreenEdgeScale;
+  return core::settings::kDefaultRangeKm[preset] *
+         core::settings::kRing3ToOuterKm * kScreenEdgeScale;
 }
 
-/** The 20 NM default preset: ~55.4 km from the centre to the screen edge. */
+/** The 20 km default preset: ~30 km from the centre to the screen edge. */
 constexpr float kHalfSpanKm = halfSpanKm(1);
 
 constexpr int kCenter = ct::kGridSize / 2;  // exact centre for an odd grid
@@ -365,7 +366,7 @@ void test_tilePixel_clamps_at_the_mercator_limit(void) {
 void test_zoom_is_maximal_for_every_range_preset(void) {
   // The whole point of zoomForView() is "as much detail as 4 tiles can buy":
   // the view must fit 256 px on both axes, and one level finer must not.
-  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
+  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
     const float span_km = halfSpanKm(p);
     const int zoom = ct::zoomForView(kLat, kLon, span_km);
     TEST_ASSERT_TRUE_MESSAGE(zoom >= 0 && zoom <= ct::kMaxZoom,
@@ -390,14 +391,13 @@ void test_zoom_is_maximal_for_every_range_preset(void) {
 void test_zoom_matches_the_standard_formula(void) {
   // Independently: the widest axis of the box must stay within 256 px, so the
   // limit is 2^z <= 360 / span_deg / sec(lat) at 111 km/deg. For the four
-  // presets at the default centre that gives 8, 7, 6, 5 — one level per
-  // doubling of range, as the presets themselves double.
-  const int expected[] = {8, 7, 6, 5};
+  // default presets at this centre give one level per doubling until 120 km.
+  const int expected[] = {9, 8, 7, 6, 6};
   TEST_ASSERT_EQUAL_UINT32_MESSAGE(
-      core::settings::kRangePresetCount,
+      core::settings::kDefaultRangeCount,
       sizeof(expected) / sizeof(expected[0]),
       "a range preset was added without an expected zoom");
-  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
+  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
     TEST_ASSERT_EQUAL_INT(expected[p], ct::zoomForView(kLat, kLon,
                                                        halfSpanKm(p)));
   }
@@ -405,7 +405,7 @@ void test_zoom_matches_the_standard_formula(void) {
 
 void test_zoom_never_rises_as_the_view_widens(void) {
   int previous = ct::kMaxZoom + 1;
-  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
+  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
     const int zoom = ct::zoomForView(kLat, kLon, halfSpanKm(p));
     TEST_ASSERT_TRUE_MESSAGE(zoom <= previous,
                              "a wider range preset asked for finer tiles");
@@ -430,7 +430,7 @@ void test_tiles_cover_every_grid_sample(void) {
   // Run the coverage property over the real presets and over centres that
   // stress the projection: the equator, the southern hemisphere, and either
   // side of the antimeridian where the tile x index wraps.
-  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
+  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
     assertViewIsCovered(kLat, kLon, halfSpanKm(p));
     assertViewIsCovered(0.0, 0.0, halfSpanKm(p));
     assertViewIsCovered(-33.8688, 151.2093, halfSpanKm(p));

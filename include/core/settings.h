@@ -26,40 +26,23 @@ enum class AirlineDisplay : uint8_t {
 };
 
 /**
- * Range presets (label on ring 3 = 3/4 of outer radius).
- *
- * Defined in nautical miles, the natural unit for aviation, and converted to km
- * because all the projection maths downstream is metric.
- *
- *  10 NM  — local area
- *  20 NM  — default; metro picture
- *  40 NM  — regional
- *  80 NM  — wide area; en-route traffic
+ * Range presets use integer kilometres as their canonical persisted unit.
+ * The value is the ring-3 label (3/4 of the outer radius); UI labels convert
+ * it to nautical miles only when requested.
  */
 struct RangePreset {
   /** Distance shown on ring 3 (3/4 of outer radius), always stored in km. */
-  float ring3_km;
+  uint16_t ring3_km;
   float outer_km;
 };
 
 constexpr float kRing3ToOuterKm = 4.0f / 3.0f;
 constexpr float kKmPerNauticalMile = 1.852f;
-
-/** Build a preset from a ring-3 distance in nautical miles. */
-constexpr RangePreset presetFromNm(float ring3_nm) {
-  return RangePreset{ring3_nm * kKmPerNauticalMile,
-                     ring3_nm * kKmPerNauticalMile * kRing3ToOuterKm};
-}
-
-constexpr RangePreset kRangePresets[] = {
-    presetFromNm(10.0f),
-    presetFromNm(20.0f),
-    presetFromNm(40.0f),
-    presetFromNm(80.0f),
-};
-
-constexpr size_t kRangePresetCount =
-    sizeof(kRangePresets) / sizeof(kRangePresets[0]);
+constexpr size_t kMaxRangePresets = 8;
+constexpr uint16_t kMaxRangeKm = 500;
+constexpr uint16_t kDefaultRangeKm[] = {10, 20, 40, 80, 120};
+constexpr size_t kDefaultRangeCount =
+    sizeof(kDefaultRangeKm) / sizeof(kDefaultRangeKm[0]);
 
 /**
  * Storage namespace. The name and its keys are frozen — changing either would
@@ -104,7 +87,16 @@ bool saveLocationFromPortal(const char* lat_str, const char* lon_str);
 /** Advance to the next preset and persist the index. */
 void rangeNext();
 const RangePreset& rangeCurrent();
+const RangePreset& rangePreset(size_t index);
+size_t rangeCount();
 uint8_t rangeIndex();
+
+using RangeChangedFn = void (*)();
+void setRangeChangedFn(RangeChangedFn fn);
+
+/** Validate, persist, and apply a comma-separated list of integer kilometres. */
+bool saveRangePresetsFromPortal(const char* value);
+void formatRangePresets(char* buf, size_t len);
 
 // --- Units and overlays ------------------------------------------------------
 
@@ -148,5 +140,9 @@ void formatRing3Label(char* buf, size_t len, float ring3_km, bool use_km);
 
 /** formatRing3Label for the active preset and unit setting. */
 void formatCurrentRing3Label(char* buf, size_t len);
+
+/** Strict parser used by portal saves and persisted-data validation. */
+bool parseRangePresets(const char* text, uint16_t* out, size_t capacity,
+                       size_t* count);
 
 }  // namespace core::settings

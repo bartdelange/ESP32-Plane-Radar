@@ -20,18 +20,13 @@ namespace ui::radar {
 using RangePreset = core::settings::RangePreset;
 using AirlineDisplay = core::settings::AirlineDisplay;
 
-// `static` is load-bearing: a constexpr reference at namespace scope has
-// external linkage, so without it every translation unit emits a definition and
-// the link fails with "multiple definition of ui::radar::kRangePresets".
-// `static` (internal linkage) rather than `inline` because parts of the ESP32
-// Arduino build compile below C++17, where inline variables are only a
-// compiler extension — this way the alias is portable to any standard.
-static constexpr auto& kRangePresets = core::settings::kRangePresets;
-constexpr size_t kRangePresetCount = core::settings::kRangePresetCount;
-
 inline void rangeInit() { core::settings::init(); }
 inline void rangeNext() { core::settings::rangeNext(); }
 inline const RangePreset& rangeCurrent() { return core::settings::rangeCurrent(); }
+inline const RangePreset& rangePreset(size_t index) {
+  return core::settings::rangePreset(index);
+}
+inline size_t rangeCount() { return core::settings::rangeCount(); }
 inline uint8_t rangeIndex() { return core::settings::rangeIndex(); }
 
 inline bool useKm() { return core::settings::useKm(); }
@@ -50,6 +45,9 @@ inline void saveTerrainFromPortal(const char* v) {
 }
 inline void saveAirlineDisplayFromPortal(const char* v) {
   core::settings::saveAirlineDisplayFromPortal(v);
+}
+inline bool saveRangePresetsFromPortal(const char* v) {
+  return core::settings::saveRangePresetsFromPortal(v);
 }
 inline void unitsReset() { core::settings::unitsReset(); }
 

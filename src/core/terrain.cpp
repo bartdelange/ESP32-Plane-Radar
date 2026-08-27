@@ -409,7 +409,7 @@ bool ensureGrid(double center_lat, double center_lon, uint8_t range_index,
   if (gridReady(center_lat, center_lon, range_index)) {
     return true;
   }
-  if (range_index >= core::settings::kRangePresetCount ||
+  if (range_index >= core::settings::kMaxRangePresets ||
       s_png_decode == nullptr) {
     return false;
   }

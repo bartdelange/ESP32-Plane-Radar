@@ -17,8 +17,8 @@ After Wi‑Fi is saved, the device reconnects automatically; the radar runs in t
 
 | Action | Effect |
 |--------|--------|
-| **Short tap** | Cycle range preset (10 → 20 → 40 → 80 NM); saved to flash after release. Refreshes aircraft within ~1 s so the wider fetch radius fills in promptly |
-| **Hold 3 s** | Clear Wi‑Fi, Current Location, range, units, airline-label choice, and overlay toggles; reboot into setup portal |
+| **Short tap** | Cycle the configured range presets (default 10 → 20 → 40 → 80 → 120 km → 10); the active range is persisted. Refreshes aircraft within ~1 s so a wider fetch radius fills promptly |
+| **Hold 3 s** | Clear Wi‑Fi and Current Location, reset units, airline-label choice, and overlay toggles, then reboot into setup; configured ranges remain |
 
 During setup you can also hold BOOT at power-on to force a credential reset (same as the long press).
 
@@ -33,7 +33,7 @@ During setup you can also hold BOOT at power-on to force a credential reset (sam
 **Reconfigure anytime** (after the device is on your network):
 
 1. Open **`http://plane-radar.local`** or **`http://<device-ip>`** (e.g. from your router or serial log at boot)
-2. Change Wi‑Fi, location, units, airline labels, runway overlay, or terrain layer; save
+2. Change Wi‑Fi, location, range presets, units, airline labels, runway overlay, or terrain layer; save
 
 The same portal runs on the setup AP and on the device’s LAN IP while connected to Wi‑Fi. mDNS hostname is `plane-radar` → **plane-radar.local** (`kPortalHostname` in `config.h`). Some clients resolve `.local` slowly; use the IP if needed.
 
@@ -42,7 +42,8 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 | Field | Purpose |
 |-------|---------|
 | **Current Location** | Latitude and longitude of the radar device; this is always the radar centre |
-| **Display distances in km** | Ring scale label in **km** instead of the default **NM** (e.g. `74km` vs `40NM`) |
+| **Radar range presets** | Strictly ascending comma-separated ring-3 distances in km, for example `10,20,40,80,120` |
+| **Display distances in km** | Ring scale label in **km** instead of the default **NM** (e.g. `40km` vs `22NM`) |
 | **Airline labels** | Hide airline labels, show the local friendly abbreviation, or show the full operator name (route data first, local table as fallback) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
 | **Show terrain** | Green elevation shading under the radar grid (default: on; off keeps the plain background) |
@@ -133,12 +134,15 @@ Tiles replaced per-point elevation queries, which billed hundreds of coordinates
 
 | Ring 3 label | Outer radius (aircraft scale) | ADS-B fetch radius |
 |------------|-------------------------------|--------------------|
-| 10 NM / 19 km | ~13 NM (25 km) | ~15 NM (27 km) |
-| 20 NM / 37 km (default) | ~27 NM (49 km) | ~29 NM (54 km) |
-| 40 NM / 74 km | ~53 NM (99 km) | ~59 NM (109 km) |
-| 80 NM / 148 km | ~107 NM (198 km) | ~118 NM (218 km) |
+| 5 NM / 10 km | ~7 NM (13 km) | ~8 NM (14 km) |
+| 11 NM / 20 km (default) | ~14 NM (27 km) | ~16 NM (29 km) |
+| 22 NM / 40 km | ~29 NM (53 km) | ~31 NM (58 km) |
+| 43 NM / 80 km | ~58 NM (107 km) | ~62 NM (116 km) |
+| 65 NM / 120 km | ~86 NM (160 km) | ~94 NM (173 km) |
 
-Preset and NM/km choice persist across reboot (`planeradar` NVS namespace).
+The preset list, active preset, and NM/km choice persist across reboot. Lists
+must contain 1–8 unique, strictly ascending integer values from 1–500 km;
+malformed saved data falls back to the defaults.
 
 ### Runways
 
@@ -178,7 +182,7 @@ Edit **`include/config.h`** for hardware and behavior:
 | Routes/tracks | `kRouteLookupsPerCycle`, `kRouteCacheSize`, route TTLs, `kTrackHistoryDepth`, `kTrackHistoryMax`, `kTrackHistoryTtlMs`, `kTagCycleIntervalMs` |
 | Terrain | `kTerrainGridSize`, `kTerrainTileUrlFmt`, `kTerrainRequestTimeoutMs`, `kTerrainTileIntervalMs`, `kTerrainRetryIntervalMs` |
 
-Range presets: `include/core/settings.h` (`kRangePresets`).
+Default range presets and validation limits live in `include/core/settings.h`.
 
 ## Project layout
 

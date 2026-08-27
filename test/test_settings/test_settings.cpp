@@ -13,6 +13,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "core/platform.h"
 #include "core/settings.h"
 
 namespace cs = core::settings;
@@ -60,24 +61,20 @@ void test_checkbox_rejects_absent_and_unknown(void) {
 // --- formatRing3Label --------------------------------------------------------
 
 void test_format_nm_is_the_default_and_is_exact(void) {
-  // The presets are authored in NM, so the default labels must come back as the
-  // exact round numbers they were defined with — no rounding drift through the
-  // km round trip.
   char buf[12];
-  const char* expected[] = {"10NM", "20NM", "40NM", "80NM"};
-  for (size_t i = 0; i < cs::kRangePresetCount; ++i) {
-    cs::formatRing3Label(buf, sizeof(buf), cs::kRangePresets[i].ring3_km,
+  const char* expected[] = {"5NM", "11NM", "22NM", "43NM", "65NM"};
+  for (size_t i = 0; i < cs::rangeCount(); ++i) {
+    cs::formatRing3Label(buf, sizeof(buf), cs::rangePreset(i).ring3_km,
                          /*use_km=*/false);
     TEST_ASSERT_EQUAL_STRING(expected[i], buf);
   }
 }
 
 void test_format_km_when_toggled(void) {
-  // Matches the table in README.md: 10/20/40/80 NM -> 19/37/74/148 km.
   char buf[12];
-  const char* expected[] = {"19km", "37km", "74km", "148km"};
-  for (size_t i = 0; i < cs::kRangePresetCount; ++i) {
-    cs::formatRing3Label(buf, sizeof(buf), cs::kRangePresets[i].ring3_km,
+  const char* expected[] = {"10km", "20km", "40km", "80km", "120km"};
+  for (size_t i = 0; i < cs::rangeCount(); ++i) {
+    cs::formatRing3Label(buf, sizeof(buf), cs::rangePreset(i).ring3_km,
                          /*use_km=*/true);
     TEST_ASSERT_EQUAL_STRING(expected[i], buf);
   }
@@ -86,21 +83,90 @@ void test_format_km_when_toggled(void) {
 // --- range presets -----------------------------------------------------------
 
 void test_outer_km_is_ring3_over_three_quarters(void) {
-  for (size_t i = 0; i < cs::kRangePresetCount; ++i) {
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, cs::kRangePresets[i].ring3_km * 4.0f / 3.0f,
-                             cs::kRangePresets[i].outer_km);
+  for (size_t i = 0; i < cs::rangeCount(); ++i) {
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, cs::rangePreset(i).ring3_km * 4.0f / 3.0f,
+                             cs::rangePreset(i).outer_km);
   }
+}
+
+void test_default_presets_are_metric_fork_defaults(void) {
+  const uint16_t expected[] = {10, 20, 40, 80, 120};
+  TEST_ASSERT_EQUAL_UINT(5, cs::rangeCount());
+  for (size_t i = 0; i < 5; ++i) {
+    TEST_ASSERT_EQUAL_UINT16(expected[i], cs::rangePreset(i).ring3_km);
+  }
+}
+
+void test_range_parser_accepts_strict_ascending_km(void) {
+  uint16_t values[cs::kMaxRangePresets] = {};
+  size_t count = 0;
+  TEST_ASSERT_TRUE(cs::parseRangePresets("5, 15,30, 200", values,
+                                         cs::kMaxRangePresets, &count));
+  TEST_ASSERT_EQUAL_UINT(4, count);
+  TEST_ASSERT_EQUAL_UINT16(5, values[0]);
+  TEST_ASSERT_EQUAL_UINT16(200, values[3]);
+}
+
+void test_range_parser_rejects_malformed_lists(void) {
+  uint16_t values[cs::kMaxRangePresets] = {};
+  size_t count = 0;
+  const char* invalid[] = {"", "0,10", "10,10", "20,10", "10,,20",
+                           "10,wat", "10,501",
+                           "10,20,30,40,50,60,70,80,90"};
+  for (const char* text : invalid) {
+    TEST_ASSERT_FALSE(cs::parseRangePresets(text, values,
+                                            cs::kMaxRangePresets, &count));
+  }
+}
+
+void test_configured_presets_persist_with_active_range(void) {
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("15,30,60"));
+  cs::rangeNext();
+  TEST_ASSERT_EQUAL_UINT16(60, cs::rangeCurrent().ring3_km);
+  cs::init();
+  TEST_ASSERT_EQUAL_UINT(3, cs::rangeCount());
+  TEST_ASSERT_EQUAL_UINT16(60, cs::rangeCurrent().ring3_km);
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,20,40,80,120"));
+}
+
+void test_invalid_persisted_ranges_fall_back_to_defaults(void) {
+  core::platform::KeyValueStore::putString(cs::kNsRadar, "rangePresets",
+                                            "40,20");
+  core::platform::KeyValueStore::putU8(cs::kNsRadar, "rangeIdx", 7);
+  cs::init();
+  TEST_ASSERT_EQUAL_UINT(cs::kDefaultRangeCount, cs::rangeCount());
+  TEST_ASSERT_EQUAL_UINT8(1, cs::rangeIndex());
+  TEST_ASSERT_EQUAL_UINT16(20, cs::rangeCurrent().ring3_km);
+  core::platform::KeyValueStore::remove(cs::kNsRadar, "rangePresets");
+  core::platform::KeyValueStore::remove(cs::kNsRadar, "rangeIdx");
+  cs::init();
+}
+
+void test_list_change_uses_first_range_not_smaller_than_old_value(void) {
+  while (cs::rangeCurrent().ring3_km != 40) cs::rangeNext();
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,30,50"));
+  TEST_ASSERT_EQUAL_UINT16(50, cs::rangeCurrent().ring3_km);
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,20,40,80,120"));
+}
+
+void test_range_configuration_does_not_move_current_location(void) {
+  const double old_lat = cs::lat();
+  const double old_lon = cs::lon();
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,25,100"));
+  TEST_ASSERT_DOUBLE_WITHIN(1e-9, old_lat, cs::lat());
+  TEST_ASSERT_DOUBLE_WITHIN(1e-9, old_lon, cs::lon());
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,20,40,80,120"));
 }
 
 void test_rangeNext_cycles_and_wraps(void) {
   const uint8_t start = cs::rangeIndex();
-  for (size_t i = 0; i < cs::kRangePresetCount; ++i) {
+  for (size_t i = 0; i < cs::rangeCount(); ++i) {
     cs::rangeNext();
   }
   TEST_ASSERT_EQUAL_UINT8(start, cs::rangeIndex());
 
   cs::rangeNext();
-  TEST_ASSERT_EQUAL_UINT8((start + 1) % cs::kRangePresetCount, cs::rangeIndex());
+  TEST_ASSERT_EQUAL_UINT8((start + 1) % cs::rangeCount(), cs::rangeIndex());
 }
 
 // --- unitsReset asymmetry ----------------------------------------------------
@@ -156,6 +222,13 @@ int main(int, char**) {
   RUN_TEST(test_format_km_when_toggled);
 
   RUN_TEST(test_outer_km_is_ring3_over_three_quarters);
+  RUN_TEST(test_default_presets_are_metric_fork_defaults);
+  RUN_TEST(test_range_parser_accepts_strict_ascending_km);
+  RUN_TEST(test_range_parser_rejects_malformed_lists);
+  RUN_TEST(test_configured_presets_persist_with_active_range);
+  RUN_TEST(test_invalid_persisted_ranges_fall_back_to_defaults);
+  RUN_TEST(test_list_change_uses_first_range_not_smaller_than_old_value);
+  RUN_TEST(test_range_configuration_does_not_move_current_location);
   RUN_TEST(test_rangeNext_cycles_and_wraps);
   RUN_TEST(test_unitsReset_leaves_range_alone);
   RUN_TEST(test_airline_display_accepts_only_known_selector_values);

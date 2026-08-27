@@ -51,6 +51,11 @@ void scheduleAdsbFetchSoon() {
                          config::kAdsbMinRefetchMs;
 }
 
+void onRangeChanged() {
+  core::terrain::clear();
+  scheduleAdsbFetchSoon();
+}
+
 /** Fired by core::settings whenever lat()/lon() actually move. */
 void onCenterChanged() {
   core::adsb::clear();
@@ -66,9 +71,6 @@ bool applyRangeNext() {
   ui::radar::formatCurrentRing3Label(range_label, sizeof(range_label));
   pf::logf("Range: %s (outer ~%.0f km)\n", range_label,
            static_cast<double>(ui::radar::rangeCurrent().outer_km));
-  // Zooming out multiplies fetchRadiusKm(); without this the cached store
-  // keeps covering the old, narrower radius for up to kAdsbFetchIntervalMs.
-  scheduleAdsbFetchSoon();
   return true;
 }
 
@@ -175,7 +177,7 @@ void setup() {
   // After init(), not before: init() seeds s_lat/s_lon from storage, and the
   // hook must not fire on that initial load, only on later moves.
   core::settings::setCenterChangedFn(onCenterChanged);
-  ui::radar::rangeInit();
+  core::settings::setRangeChangedFn(onRangeChanged);
   core::adsb::setPollFn(pollWifi);
   core::terrain::setPollFn(pollWifi);
   core::terrain::setPngDecoder(platform_png::decode);
