@@ -10,10 +10,9 @@
  *
  * That makes deterministic everything that would otherwise only happen against
  * the live tile bucket: one request per tile in tilesForView() order, the
- * spacing between them, where each decoded tile lands in the grid, retrying a
- * failed tile without losing the tiles already decoded, abandoning a download
- * that keeps failing, restarting when the view changes mid-download, and the
- * single-slot cache.
+ * spacing between them, where each decoded tile lands in the grid, immediate
+ * transport-failure backoff, HTTP retry handling, restarting when the view
+ * changes mid-download, and the single-slot cache.
  */
 
 #include <unity.h>
@@ -39,7 +38,7 @@ unsigned long s_fake_now_ms = 0;
 
 /** Requests as issued; outcome script consumed one entry per request. */
 std::vector<std::string> s_urls;
-std::deque<bool> s_outcomes;  ///< empty = every request succeeds
+std::deque<int> s_outcomes;  ///< empty = 200; zero = transport failure
 
 void advanceMs(unsigned long ms) { s_fake_now_ms += ms; }
 
@@ -230,16 +229,21 @@ void logf(const char*, ...) {}
 
 bool HttpClient::get(const char* url, BodyFn on_body,
                      unsigned long /*timeout_ms*/, PollFn poll) {
+  return getStatus(url, on_body, 0, poll) == 200;
+}
+
+int HttpClient::getStatus(const char* url, BodyFn on_body,
+                          unsigned long /*timeout_ms*/, PollFn poll) {
   s_urls.emplace_back(url);
   if (poll != nullptr) {
     poll();
   }
 
   if (!s_outcomes.empty()) {
-    const bool ok = s_outcomes.front();
+    const int status = s_outcomes.front();
     s_outcomes.pop_front();
-    if (!ok) {
-      return false;
+    if (status != 200) {
+      return status;
     }
   }
 
@@ -247,12 +251,7 @@ bool HttpClient::get(const char* url, BodyFn on_body,
   // this is what lets it answer with the tile that was actually requested.
   const std::string& body = s_urls.back();
   MemoryBodyReader reader(body.data(), body.size());
-  return on_body(reader);
-}
-
-int HttpClient::getStatus(const char* url, BodyFn on_body,
-                          unsigned long timeout_ms, PollFn poll) {
-  return get(url, on_body, timeout_ms, poll) ? 200 : 0;
+  return on_body(reader) ? 200 : 0;
 }
 
 }  // namespace core::platform
@@ -335,25 +334,20 @@ void test_requests_are_spaced_by_the_tile_interval(void) {
 
 // --- Failure handling --------------------------------------------------------
 
-void test_failed_tile_is_retried_without_losing_progress(void) {
+void test_transport_failure_enters_retry_gate_immediately(void) {
   View v;
   TEST_ASSERT_TRUE_MESSAGE(findView(ct::kMaxTiles, kSpan, &v),
                            "no 4-tile view found");
 
-  // Second request fails once; everything else succeeds.
-  s_outcomes = {true, false};
+  s_outcomes = {200, 0};
+  TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
+  advanceMs(config::kTerrainTileIntervalMs);
+  TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
+  TEST_ASSERT_EQUAL_INT(2, static_cast<int>(s_urls.size()));
 
-  TEST_ASSERT_TRUE(runToCompletion(v, kRange));
-  TEST_ASSERT_EQUAL_INT(ct::kMaxTiles + 1, static_cast<int>(s_urls.size()));
-
-  // The retry re-requested the same tile instead of restarting at the first.
-  TEST_ASSERT_EQUAL_STRING(urlOf(v.tiles[1]).c_str(), s_urls[1].c_str());
-  TEST_ASSERT_EQUAL_STRING(urlOf(v.tiles[1]).c_str(), s_urls[2].c_str());
-  TEST_ASSERT_EQUAL_STRING(urlOf(v.tiles[2]).c_str(), s_urls[3].c_str());
-
-  // Tile 0 was requested once, before the failure: the grid can only be whole
-  // if what it decoded then survived the failed tile.
-  assertGridMatchesTiles(v);
+  advanceMs(config::kTerrainTileIntervalMs);
+  TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
+  TEST_ASSERT_EQUAL_INT(2, static_cast<int>(s_urls.size()));
 }
 
 void test_download_is_abandoned_after_repeated_failures(void) {
@@ -362,7 +356,7 @@ void test_download_is_abandoned_after_repeated_failures(void) {
                            "no 4-tile view found");
 
   // First tile succeeds, then the second fails its three attempts.
-  s_outcomes = {true, false, false, false};
+  s_outcomes = {200, 503, 503, 503};
   for (int i = 0; i < 4; ++i) {
     TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
     advanceMs(config::kTerrainTileIntervalMs);
@@ -442,7 +436,7 @@ void test_a_range_change_evicts_the_single_cached_grid(void) {
 
 void test_the_retry_gate_belongs_to_the_view_that_failed(void) {
   const View v = makeView(kBaseLat, kBaseLon, kSpan);
-  s_outcomes = {false, false, false};
+  s_outcomes = {503, 503, 503};
   for (int i = 0; i < 3; ++i) {
     TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
     advanceMs(config::kTerrainTileIntervalMs);
@@ -477,7 +471,7 @@ void test_each_tile_is_decoded_exactly_once(void) {
 
 void test_a_request_that_never_delivers_a_body_decodes_nothing(void) {
   const View v = makeView(kBaseLat, kBaseLon, kSpan);
-  s_outcomes = {false};
+  s_outcomes = {0};
 
   TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
   TEST_ASSERT_EQUAL_INT(1, static_cast<int>(s_urls.size()));
@@ -520,7 +514,7 @@ int main(int, char**) {
 
   RUN_TEST(test_requests_are_spaced_by_the_tile_interval);
 
-  RUN_TEST(test_failed_tile_is_retried_without_losing_progress);
+  RUN_TEST(test_transport_failure_enters_retry_gate_immediately);
   RUN_TEST(test_download_is_abandoned_after_repeated_failures);
 
   RUN_TEST(test_view_change_mid_download_restarts_it);

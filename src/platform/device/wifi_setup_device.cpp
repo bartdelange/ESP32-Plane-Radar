@@ -72,7 +72,6 @@ WiFiManager s_wm;
 bool s_wm_configured = false;
 
 void ensureWifiManager();
-void startLanWebPortal();
 void stopLanWebPortal();
 bool wifiLinkUp();
 
@@ -283,29 +282,8 @@ void ensureWifiManager() {
   s_wm_configured = true;
 }
 
-void startLanWebPortal() {
-  if (!wifiLinkUp() || s_wm.getWebPortalActive() ||
-      s_wm.getConfigPortalActive()) {
-    return;
-  }
-  refreshPortalParamDefaults();
-  core::platform::logHeapState("lan-portal-before");
-  WiFi.mode(WIFI_STA);
-  s_wm.setConfigPortalBlocking(false);
-#ifdef WM_MDNS
-  MDNS.end();
-  if (MDNS.begin(config::kPortalHostname)) {
-    MDNS.addService("http", "tcp", 80);
-  }
-#endif
-  s_wm.startWebPortal();
-  Serial.printf("LAN config: http://%s.local or http://%s\n",
-                config::kPortalHostname, WiFi.localIP().toString().c_str());
-  core::platform::logHeapState("lan-portal-after");
-}
-
 void stopLanWebPortal() {
-  if (!s_wm.getWebPortalActive()) {
+  if (!s_wm_configured || !s_wm.getWebPortalActive()) {
     return;
   }
   s_wm.stopWebPortal();
@@ -373,31 +351,62 @@ bool tryConnectWithUi(const String& ssid, const String& pass, bool show_ui) {
 }
 
 bool connectSavedNetwork(bool show_ui) {
-  if (!storedWifiCredentials()) {
+  wifi_config_t conf = {};
+  if (!storedWifiCredentials() ||
+      esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK ||
+      conf.sta.ssid[0] == '\0') {
     return false;
   }
 
-  ensureWifiManager();
-  const String ssid = s_wm.getWiFiSSID();
-  if (ssid.length() == 0) {
-    return false;
+  // WiFi.begin() with no arguments uses the credentials already persisted by
+  // the ESP-IDF driver. Keeping this path independent of WiFiManager is
+  // deliberate: its WebServer, parameters and mDNS consume the contiguous
+  // heap that the first TLS handshake needs.
+  const String ssid(reinterpret_cast<const char*>(conf.sta.ssid));
+  if (wifiLinkUp()) {
+    return true;
   }
-  const String pass = s_wm.getWiFiPass();
-  return tryConnectWithUi(ssid, pass, show_ui);
+  if (show_ui) {
+    statusScreenConnectingBegin(ssid.c_str());
+  }
+  for (uint8_t attempt = 1; attempt <= config::kWifiConnectAttempts; ++attempt) {
+    if (attempt > 1) {
+      Serial.printf("WiFi connect retry %u/%u\n", attempt,
+                    config::kWifiConnectAttempts);
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      delay(400);
+    }
+    prepareSta();
+    WiFi.begin();
+    if (waitForLinkWithUi(ssid.c_str(), config::kWifiConnectAttemptMs)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool openConfigPortal() {
+  ensureWifiManager();
   stopLanWebPortal();
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
   delay(50);
   statusScreenPortal();
+  refreshPortalParamDefaults();
+  core::platform::logHeapState("config-portal-before");
   s_wm.setConfigPortalBlocking(false);
   s_wm.startConfigPortal(config::kPortalApName);
+  core::platform::logHeapState("config-portal-active");
   while (s_wm.getConfigPortalActive()) {
     bootButtonPollLongPress();
     if (s_wm.process()) {
-      return true;
+      // WiFiManager and its WebServer own long-lived allocations. Credentials
+      // and radar settings have been persisted by this point, so reboot into
+      // the lean saved-network path instead of carrying portal heap into TLS.
+      Serial.println("Configuration saved — restarting radar");
+      delay(250);
+      esp_restart();
     }
     delay(10);
   }
@@ -467,22 +476,10 @@ void wifiLoop() {
   // win over a slow request. This call may not return (hold -> reset ->
   // restart), which is why nothing below it is required for correctness.
   bootButtonPollLongPress();
-  ensureWifiManager();
-  if (wifiLinkUp()) {
-    if (!s_wm.getWebPortalActive() && !s_wm.getConfigPortalActive()) {
-      startLanWebPortal();
-    }
-    if (s_wm.getWebPortalActive() || s_wm.getConfigPortalActive()) {
-      s_wm.process();
-    }
-  } else {
-    stopLanWebPortal();
-  }
 }
 
 bool wifiSetupConnect() {
   initBootButton();
-  ensureWifiManager();
 
   const bool force_portal = consumeForceConfigPortal();
   WiFi.setAutoReconnect(false);

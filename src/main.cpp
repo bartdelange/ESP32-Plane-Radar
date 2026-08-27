@@ -28,6 +28,7 @@ bool g_radar_visible = false;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
+bool g_adsb_has_succeeded = false;
 bool g_terrain_download_active = false;
 bool g_logged_radar_heap = false;
 bool g_logged_no_terrain_scratch = false;
@@ -67,6 +68,8 @@ void onCenterChanged() {
   core::adsb::clear();
   core::terrain::clear();
   core::track::clear();
+  g_adsb_has_succeeded = false;
+  g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
 }
 
 /** State change plus NVS only — the drain loop in handleBootButton() owns the
@@ -139,7 +142,8 @@ void pollWifi() { wifiLoop(); }
  * so this is safe to call every loop iteration.
  */
 void maybeFetchTerrain() {
-  if (!g_radar_visible || !wifiIsConnected() || !ui::radar::showTerrain()) {
+  if (!g_adsb_has_succeeded || !g_radar_visible || !wifiIsConnected() ||
+      !ui::radar::showTerrain()) {
     return;
   }
   if (!ui::radarDisplayFrameReady()) {
@@ -164,17 +168,19 @@ void maybeFetchTerrain() {
   g_terrain_download_active = active;
 }
 
-void fetchAndDrawAircraft() {
+bool fetchAndDrawAircraft() {
   const float fetch_km = ui::radar::fetchRadiusKm();
   if (!core::adsb::fetchUpdate(core::settings::lat(), core::settings::lon(),
                                fetch_km)) {
     pf::logHeapState("adsb-after");
     handleBootButton();
-    return;
+    return false;
   }
+  g_adsb_has_succeeded = true;
   pf::logHeapState("adsb-after");
   ui::radarDisplayRefreshAircraft();
   handleBootButton();
+  return true;
 }
 
 }  // namespace
@@ -206,6 +212,9 @@ void setup() {
   if (wifiSetupConnect()) {
     pf::logHeapState("wifi-connected");
     showRadarIfConnected();
+    // The first outbound HTTPS operation after association is ADS-B. Terrain
+    // remains gated until that request succeeds.
+    g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
   }
 }
 
@@ -217,6 +226,7 @@ void loop() {
     if (g_radar_visible) {
       pf::logf("WiFi lost — will reconnect\n");
       g_radar_visible = false;
+      g_adsb_has_succeeded = false;
     }
 
     if (g_wifi_down_since == 0) {
@@ -230,18 +240,25 @@ void loop() {
       if (wifiReconnect()) {
         g_wifi_down_since = 0;
         showRadarIfConnected();
+        g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
       }
     }
   } else {
     g_wifi_down_since = 0;
+    bool adsb_attempted = false;
     if (!g_radar_visible) {
       showRadarIfConnected();
     } else if (pf::nowMs() - g_last_adsb_fetch_ms >=
                config::kAdsbFetchIntervalMs) {
       g_last_adsb_fetch_ms = pf::nowMs();
+      adsb_attempted = true;
       fetchAndDrawAircraft();
     }
-    maybeFetchTerrain();
+    // Let all request-local TLS/HTTP objects unwind before terrain borrows the
+    // same constrained heap on a later loop iteration.
+    if (!adsb_attempted) {
+      maybeFetchTerrain();
+    }
     ui::radarDisplayTick();
   }
 

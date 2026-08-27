@@ -473,14 +473,23 @@ bool ensureGrid(double center_lat, double center_lon, uint8_t range_index,
 
   beginTile(&g, tile);
   s_prog.last_request_ms = platform::nowMs();
-  const bool ok = platform::HttpClient::get(
+  const int status = platform::HttpClient::getStatus(
       url, decodeBody, config::kTerrainRequestTimeoutMs, s_poll_fn);
   s_tile_grid = nullptr;
 
-  if (!ok) {
+  if (status != 200) {
+    // Status zero is a transport/decoder failure. In particular, retrying an
+    // mbedTLS allocation failure immediately only fragments the same heap
+    // further, so defer the whole decorative layer to its normal retry gate.
+    if (status == 0) {
+      platform::logf("terrain: tile %d/%d/%d transport failed — deferring\n",
+                     tile.z, tile.x, tile.y);
+      gateRetries(range_index);
+      endDownload();
+      return false;
+    }
     // A single failed tile should not scrap the ones already decoded: keep the
-    // cursor and retry it on a later call. Only a tile that keeps failing
-    // abandons the download to the retry gate.
+    // cursor and retry recoverable HTTP responses on a later call.
     ++s_prog.failures;
     platform::logf("terrain: tile %d/%d/%d failed (attempt %d)\n", tile.z,
                    tile.x, tile.y, s_prog.failures);
