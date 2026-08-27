@@ -18,11 +18,16 @@ struct Aircraft {
   float nose_deg;   ///< where the airframe points
   float track_deg;  ///< where it is actually going
   float gs_knots;
+  char hex[7];
   char callsign[9];
   char type[5];
   char alt[12];
   /** Resolved from the callsign's ICAO prefix, or nullptr when unknown. */
   const airlines::Airline* airline;
+  float vertical_rate_fpm;
+  char route_origin[20];
+  char route_destination[20];
+  char route_airline[24];
 };
 
 /** Hard cap on tracked targets; the render path allocates arrays of this size. */

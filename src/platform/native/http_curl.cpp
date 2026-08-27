@@ -82,8 +82,8 @@ class EasyHandle {
 
 }  // namespace
 
-bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,
-                     PollFn fn) {
+int HttpClient::getStatus(const char* url, BodyFn on_body,
+                          unsigned long timeout_ms, PollFn fn) {
   // curl pushes the body at us through a write callback, so the host collects
   // it and replays it to the decoder afterwards. The device streams instead,
   // where holding tens of kilobytes is what runs the heap out; here it is free.
@@ -94,7 +94,7 @@ bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,
   EasyHandle easy;
   if (easy.get() == nullptr) {
     logf("http: curl_easy_init failed\n");
-    return false;
+    return 0;
   }
   CURL* curl = easy.get();
 
@@ -125,18 +125,23 @@ bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,
     // A partial body is worse than none, so it is never handed on: the caller
     // retries on the next cycle.
     logf("http: %s\n", curl_easy_strerror(res));
-    return false;
+    return 0;
   }
 
   long status = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
-  if (status != 200) {
+  if (status != 200 && status != 404) {
     logf("http: HTTP %ld\n", status);
-    return false;
+    return static_cast<int>(status);
   }
 
   MemoryBodyReader reader(body.data(), body.size());
-  return on_body(reader);
+  return on_body(reader) ? static_cast<int>(status) : 0;
+}
+
+bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,
+                     PollFn fn) {
+  return getStatus(url, on_body, timeout_ms, fn) == 200;
 }
 
 }  // namespace core::platform

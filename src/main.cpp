@@ -13,6 +13,7 @@
 #include "core/settings.h"
 #include "core/tap_gesture.h"
 #include "core/terrain.h"
+#include "core/track_history.h"
 #include "platform/png_decode.h"
 #include "platform/wifi_setup.h"
 #include "ui/radar_display.h"
@@ -54,6 +55,7 @@ void scheduleAdsbFetchSoon() {
 void onCenterChanged() {
   core::adsb::clear();
   core::terrain::clear();
+  core::track::clear();
 }
 
 /** State change plus NVS only — the drain loop in handleBootButton() owns the
@@ -217,6 +219,7 @@ void loop() {
       fetchAndDrawAircraft();
     }
     maybeFetchTerrain();
+    ui::radarDisplayTick();
   }
 
   pf::sleepMs(10);

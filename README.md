@@ -17,9 +17,8 @@ After Wi‑Fi is saved, the device reconnects automatically; the radar runs in t
 
 | Action | Effect |
 |--------|--------|
-| **Short tap** | Cycle range preset (10 → 20 → 40 → 80 NM); saved to flash (~500 ms after release, so a double tap does not also change range). Refreshes aircraft within ~1 s so the wider fetch radius fills in promptly |
-| **Double tap** | Cycle configured airport sites (ICAO list from the portal); active code shown on the left of the radar |
-| **Hold 3 s** | Clear Wi‑Fi, location, airport list, units, and overlay toggles (runways and terrain back to on); reboot into setup portal |
+| **Short tap** | Cycle range preset (10 → 20 → 40 → 80 NM); saved to flash after release. Refreshes aircraft within ~1 s so the wider fetch radius fills in promptly |
+| **Hold 3 s** | Clear Wi‑Fi, Current Location, range, units, airline-label choice, and overlay toggles; reboot into setup portal |
 
 During setup you can also hold BOOT at power-on to force a credential reset (same as the long press).
 
@@ -34,7 +33,7 @@ During setup you can also hold BOOT at power-on to force a credential reset (sam
 **Reconfigure anytime** (after the device is on your network):
 
 1. Open **`http://plane-radar.local`** or **`http://<device-ip>`** (e.g. from your router or serial log at boot)
-2. Change Wi‑Fi, location, units, runway overlay, or terrain layer; save
+2. Change Wi‑Fi, location, units, airline labels, runway overlay, or terrain layer; save
 
 The same portal runs on the setup AP and on the device’s LAN IP while connected to Wi‑Fi. mDNS hostname is `plane-radar` → **plane-radar.local** (`kPortalHostname` in `config.h`). Some clients resolve `.local` slowly; use the IP if needed.
 
@@ -44,6 +43,7 @@ The same portal runs on the setup AP and on the device’s LAN IP while connecte
 |-------|---------|
 | **Current Location** | Latitude and longitude of the radar device; this is always the radar centre |
 | **Display distances in km** | Ring scale label in **km** instead of the default **NM** (e.g. `74km` vs `40NM`) |
+| **Airline labels** | Hide airline labels, show the local friendly abbreviation, or show the full operator name (route data first, local table as fallback) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
 | **Show terrain** | Green elevation shading under the radar grid (default: on; off keeps the plain background) |
 
@@ -141,21 +141,23 @@ Preset and NM/km choice persist across reboot (`planeradar` NVS namespace).
 
 ### Runways
 
-- Major airports from OurAirports (`large_airport`); all open runway strips in range (helipads excluded)
+- Worldwide large airports plus medium and small airports in `LOCAL_COUNTRIES` (currently `NL`) from OurAirports; all open runway strips in range (helipads excluded)
 - Teal runway lines with one ICAO label per airport (e.g. `KJFK`); toggle in the Wi‑Fi setup portal
 - Update the embedded list: `python3 scripts/build_large_airports.py`
 
 ### Aircraft
 
-- **Inside the outer ring** — red heading triangle, magenta speed vector (clipped at the ring), callsign / type / altitude tags
+- **Inside the outer ring** — red heading triangle, magenta speed vector, and a fading recent track; vectors and tracks are clipped at the ring
 - **Outside the ring** (still within ADS-B fetch) — small **red dot on the screen rim** at the correct bearing (direction cue; not distance-accurate past the ring)
-- **Tags** — placed toward the **center**: west (left) → tag on the **right** of the symbol; east (right) → tag on the **left**
+- **Tags** — optional airline, callsign, type, climb/descent-marked altitude, and origin/destination route; overlapping tags cycle so dense traffic remains readable
 
 As range decreases (or aircraft approach), targets move inward; beyond-ring dots become full symbols when they cross the outer ring.
 
 ### ADS-B
 
 - Source: `https://opendata.adsb.fi/api/v3/`
+- Device requests use HTTP/1.0 to avoid unreliable chunked responses on the ESP32 client
+- Route/operator enrichment comes from adsbdb with a bounded cache, negative/transient TTLs, and per-poll lookup throttling
 - Fetch radius: `ui::radar::fetchRadiusKm()` — scales with the active preset to roughly the screen edge (so rim dots have data)
 - Poll interval: `kAdsbFetchIntervalMs` (3 s) in `config.h`
 - Ground aircraft hidden by default (`kAdsbShowGroundAircraft`)
@@ -171,7 +173,8 @@ Edit **`include/config.h`** for hardware and behavior:
 | BOOT | `kBootPin`, `kBootResetHoldMs`, `kBootTapMinMs` |
 | Display SPI | pins, `kDisplayInvert`, `kDisplayRgbOrder`, `kDisplaySpiWriteHz` |
 | Default location | `kDefaultRadarLat` / `kDefaultRadarLon` (overridden by the persisted Current Location) |
-| ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft` |
+| ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft`, `kVerticalRateDeadbandFpm` |
+| Routes/tracks | `kRouteLookupsPerCycle`, `kRouteCacheSize`, route TTLs, `kTrackHistoryDepth`, `kTrackHistoryMax`, `kTrackHistoryTtlMs`, `kTagCycleIntervalMs` |
 | Terrain | `kTerrainGridSize`, `kTerrainTileUrlFmt`, `kTerrainRequestTimeoutMs`, `kTerrainTileIntervalMs`, `kTerrainRetryIntervalMs` |
 
 Range presets: `include/core/settings.h` (`kRangePresets`).
@@ -186,6 +189,8 @@ include/
     settings.h             — location, range preset, units, runway toggle
     geo.h                  — lat/lon to screen projection
     adsb.h, aircraft.h     — ADS-B fetch and decode
+    route.h                — adsbdb route/operator cache and lookup
+    track_history.h        — bounded portable aircraft track history
     terrain.h              — terrain-tile elevation grid fetch and cache
     portal_params.h        — config-portal field table (one per destination)
     large_airports.h

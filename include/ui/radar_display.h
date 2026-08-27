@@ -10,6 +10,8 @@ void radarDisplayDraw();
 
 /** Redraw aircraft only (blits cached grid; no full-screen clear). */
 void radarDisplayRefreshAircraft();
+/** Advance time-based tag cycling without waiting for another ADS-B fetch. */
+void radarDisplayTick();
 
 /**
  * Lends out the frame sprite's pixels as scratch, or nullptr if there are fewer

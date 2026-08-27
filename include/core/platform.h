@@ -172,6 +172,14 @@ struct HttpClient {
    */
   static bool get(const char* url, BodyFn on_body, unsigned long timeout_ms,
                   PollFn poll);
+
+  /**
+   * GET variant that also accepts a 404 body and returns the HTTP status.
+   * Returns 0 for transport/decoder failure. Used for APIs where 404 JSON is a
+   * firm negative result rather than a transient transport failure.
+   */
+  static int getStatus(const char* url, BodyFn on_body,
+                       unsigned long timeout_ms, PollFn poll);
 };
 
 }  // namespace core::platform

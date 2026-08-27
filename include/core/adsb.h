@@ -14,6 +14,9 @@
 
 namespace core::adsb {
 
+enum class VerticalDirection { kUnavailable, kLevel, kClimb, kDescent };
+VerticalDirection verticalDirection(float rate_fpm);
+
 size_t aircraftCount();
 const Aircraft* aircraftList();
 

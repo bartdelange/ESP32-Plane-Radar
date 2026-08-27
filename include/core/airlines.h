@@ -20,4 +20,8 @@ struct Airline {
  */
 const Airline* forCallsign(const char* callsign);
 
+/** Route operator wins for Full Name; local data remains the offline fallback. */
+const char* preferredFullName(const Airline* local,
+                              const char* route_operator);
+
 }  // namespace core::airlines

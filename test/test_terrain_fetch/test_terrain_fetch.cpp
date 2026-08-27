@@ -245,6 +245,11 @@ bool HttpClient::get(const char* url, BodyFn on_body,
   return on_body(reader);
 }
 
+int HttpClient::getStatus(const char* url, BodyFn on_body,
+                          unsigned long timeout_ms, PollFn poll) {
+  return get(url, on_body, timeout_ms, poll) ? 200 : 0;
+}
+
 }  // namespace core::platform
 
 // --- One request per tile, in tilesForView() order ---------------------------

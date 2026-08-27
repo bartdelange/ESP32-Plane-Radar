@@ -8,6 +8,7 @@
  * include/platform/device/pins.h.
  */
 
+#include <cstddef>
 #include <cstdint>
 
 namespace config {
@@ -96,6 +97,20 @@ constexpr unsigned long kAdsbFetchIntervalMs = 10000;
 constexpr unsigned long kAdsbMinRefetchMs = 1000;
 /** false = hide aircraft with alt_baro "ground"; true = show them too. */
 constexpr bool kAdsbShowGroundAircraft = false;
+
+// --- Enhanced aircraft data --------------------------------------------------
+constexpr bool kRouteLookupEnabled = true;
+constexpr char kRouteApiBase[] = "https://api.adsbdb.com/v0/callsign/";
+constexpr uint8_t kRouteLookupsPerCycle = 3;
+constexpr size_t kRouteCacheSize = 32;
+constexpr unsigned long kRouteNegativeTtlMs = 600000UL;
+constexpr unsigned long kRouteRetryTtlMs = 120000UL;
+constexpr size_t kTrackHistoryDepth = 32;
+constexpr size_t kTrackHistoryMax = 24;
+constexpr unsigned long kTrackHistoryTtlMs = 60000UL;
+constexpr float kTrackHistoryMinStepDeg2 = 1.0e-8f;
+constexpr float kVerticalRateDeadbandFpm = 200.0f;
+constexpr unsigned long kTagCycleIntervalMs = 2000UL;
 
 // --- UI colors (RGB565) — status screens ---
 constexpr uint16_t kColorBlack = 0x0000;

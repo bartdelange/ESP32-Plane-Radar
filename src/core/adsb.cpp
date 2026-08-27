@@ -7,6 +7,8 @@
 #include <cstring>
 
 #include "config.h"
+#include "core/route.h"
+#include "core/track_history.h"
 
 namespace core::adsb {
 
@@ -103,13 +105,40 @@ void formatAltitudeTag(const JsonObject& plane, char* out, size_t out_len) {
 }
 
 void fillTagFields(Aircraft* ac, const JsonObject& plane) {
+  copyJsonStringTrimmed(plane, "hex", ac->hex, sizeof(ac->hex));
   copyJsonStringTrimmed(plane, "flight", ac->callsign, sizeof(ac->callsign));
   if (ac->callsign[0] == '\0') {
-    copyJsonStringTrimmed(plane, "hex", ac->callsign, sizeof(ac->callsign));
+    strncpy(ac->callsign, ac->hex, sizeof(ac->callsign) - 1);
+    ac->callsign[sizeof(ac->callsign) - 1] = '\0';
   }
   copyJsonStringTrimmed(plane, "t", ac->type, sizeof(ac->type));
   formatAltitudeTag(plane, ac->alt, sizeof(ac->alt));
   ac->airline = airlines::forCallsign(ac->callsign);
+  ac->vertical_rate_fpm = NAN;
+  if (!readJsonFloat(plane, "baro_rate", &ac->vertical_rate_fpm)) {
+    readJsonFloat(plane, "geom_rate", &ac->vertical_rate_fpm);
+  }
+  ac->route_origin[0] = '\0';
+  ac->route_destination[0] = '\0';
+  ac->route_airline[0] = '\0';
+}
+
+void resolveRoutes() {
+  uint8_t remaining = config::kRouteLookupsPerCycle;
+  for (size_t i = 0; i < s_aircraft_count; ++i) {
+    core::route::Info route{};
+    const bool allow_network = remaining > 0;
+    bool attempted = false;
+    core::route::resolve(s_aircraft[i].callsign, &route, allow_network,
+                         &attempted, s_poll_fn);
+    if (attempted) --remaining;
+    memcpy(s_aircraft[i].route_origin, route.origin,
+           sizeof s_aircraft[i].route_origin);
+    memcpy(s_aircraft[i].route_destination, route.destination,
+           sizeof s_aircraft[i].route_destination);
+    memcpy(s_aircraft[i].route_airline, route.airline,
+           sizeof s_aircraft[i].route_airline);
+  }
 }
 
 /**
@@ -262,6 +291,15 @@ bool parseBody(platform::BodyReader& body) {
 
 }  // namespace
 
+VerticalDirection verticalDirection(float rate_fpm) {
+  if (std::isnan(rate_fpm)) return VerticalDirection::kUnavailable;
+  if (rate_fpm >= config::kVerticalRateDeadbandFpm)
+    return VerticalDirection::kClimb;
+  if (rate_fpm <= -config::kVerticalRateDeadbandFpm)
+    return VerticalDirection::kDescent;
+  return VerticalDirection::kLevel;
+}
+
 void setPollFn(platform::PollFn fn) { s_poll_fn = fn; }
 
 void clear() { s_aircraft_count = 0; }
@@ -290,6 +328,10 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
     return false;
   }
 
+  resolveRoutes();
+  for (size_t i = 0; i < s_aircraft_count; ++i)
+    core::track::record(s_aircraft[i].hex, s_aircraft[i].lat, s_aircraft[i].lon);
+  core::track::expireStale();
   platform::logf("adsb: %u aircraft\n",
                  static_cast<unsigned>(s_aircraft_count));
   return true;

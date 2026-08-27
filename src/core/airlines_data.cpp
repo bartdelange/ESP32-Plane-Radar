@@ -155,4 +155,11 @@ const Airline* forCallsign(const char* callsign) {
   return nullptr;
 }
 
+const char* preferredFullName(const Airline* local,
+                              const char* route_operator) {
+  if (route_operator != nullptr && route_operator[0] != '\0')
+    return route_operator;
+  return local != nullptr ? local->name : nullptr;
+}
+
 }  // namespace core::airlines

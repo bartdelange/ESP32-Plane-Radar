@@ -136,35 +136,44 @@ class StreamBodyReader : public BodyReader {
 
 }  // namespace
 
-bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,
-                     PollFn fn) {
+int HttpClient::getStatus(const char* url, BodyFn on_body,
+                          unsigned long timeout_ms, PollFn fn) {
   WiFiClientSecure client;
   client.setInsecure();
 
   HTTPClient http;
   if (!http.begin(client, url)) {
     logf("http: begin failed\n");
-    return false;
+    return 0;
   }
 
+  // adsb.fi/Cloudflare may use HTTP/1.1 chunked transfer encoding. The
+  // streaming reader deliberately consumes the socket directly, so request
+  // HTTP/1.0 and receive an unframed close-delimited body instead.
+  http.useHTTP10(true);
   http.setTimeout(timeout_ms);
   const int code = performGetWithPoll(http, timeout_ms, fn);
-  if (code != HTTP_CODE_OK) {
+  if (code != HTTP_CODE_OK && code != HTTP_CODE_NOT_FOUND) {
     logf("http: HTTP %d\n", code);
     http.end();
-    return false;
+    return code > 0 ? code : 0;
   }
 
   WiFiClient* stream = http.getStreamPtr();
   if (stream == nullptr) {
     http.end();
-    return false;
+    return 0;
   }
 
   StreamBodyReader body(http, *stream, millis() + timeout_ms, fn);
   const bool ok = on_body(body);
   http.end();
-  return ok;
+  return ok ? code : 0;
+}
+
+bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,
+                     PollFn fn) {
+  return getStatus(url, on_body, timeout_ms, fn) == HTTP_CODE_OK;
 }
 
 }  // namespace core::platform

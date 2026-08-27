@@ -9,6 +9,7 @@
 
 #include <unity.h>
 
+#include <cmath>
 #include <string>
 
 #include "core/adsb.h"
@@ -85,6 +86,28 @@ void test_aircraft_without_a_position_is_skipped(void) {
   TEST_ASSERT_EQUAL_STRING("def", adsb::aircraftList()[0].callsign);
 }
 
+void test_vertical_rate_prefers_baro_and_falls_back_to_geometric(void) {
+  TEST_ASSERT_TRUE(adsb::parseResponse(
+      R"({"ac":[{"hex":"abc","lat":47.0,"lon":15.0,"baro_rate":350,"geom_rate":100},)"
+      R"({"hex":"def","lat":47.1,"lon":15.1,"geom_rate":-420}]})"));
+  TEST_ASSERT_EQUAL_size_t(2, adsb::aircraftCount());
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 350.0f,
+                           adsb::aircraftList()[0].vertical_rate_fpm);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -420.0f,
+                           adsb::aircraftList()[1].vertical_rate_fpm);
+}
+
+void test_vertical_rate_deadband_and_unavailable_state(void) {
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(adsb::VerticalDirection::kLevel),
+                        static_cast<int>(adsb::verticalDirection(199.0f)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(adsb::VerticalDirection::kClimb),
+                        static_cast<int>(adsb::verticalDirection(200.0f)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(adsb::VerticalDirection::kDescent),
+                        static_cast<int>(adsb::verticalDirection(-200.0f)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(adsb::VerticalDirection::kUnavailable),
+                        static_cast<int>(adsb::verticalDirection(NAN)));
+}
+
 // --- Framing -----------------------------------------------------------------
 
 void test_quiet_sky_reports_no_aircraft(void) {
@@ -143,6 +166,8 @@ int main(int, char**) {
   RUN_TEST(test_ground_aircraft_are_skipped);
   RUN_TEST(test_unknown_callsigns_have_no_airline);
   RUN_TEST(test_aircraft_without_a_position_is_skipped);
+  RUN_TEST(test_vertical_rate_prefers_baro_and_falls_back_to_geometric);
+  RUN_TEST(test_vertical_rate_deadband_and_unavailable_state);
 
   RUN_TEST(test_quiet_sky_reports_no_aircraft);
   RUN_TEST(test_empty_array_reports_no_aircraft);
