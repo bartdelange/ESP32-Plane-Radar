@@ -129,9 +129,16 @@ void resolveRoutes() {
     core::route::Info route{};
     const bool allow_network = remaining > 0;
     bool attempted = false;
+    bool transient_failure = false;
     core::route::resolve(s_aircraft[i].callsign, &route, allow_network,
-                         &attempted, s_poll_fn);
-    if (attempted) --remaining;
+                         &attempted, s_poll_fn, &transient_failure);
+    if (attempted) {
+      // Heap/connectivity failures are cycle-wide signals. Cache this
+      // callsign's transient result, then preserve heap and radar time by not
+      // opening more route TLS sessions until the next ADS-B cycle.
+      core::route::consumeLookupBudget(attempted, transient_failure,
+                                       &remaining);
+    }
     memcpy(s_aircraft[i].route_origin, route.origin,
            sizeof s_aircraft[i].route_origin);
     memcpy(s_aircraft[i].route_destination, route.destination,

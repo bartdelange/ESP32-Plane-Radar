@@ -14,15 +14,18 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <esp_heap_caps.h>
 
 #include <cstring>
+#include <climits>
 
 namespace core::platform {
 
 namespace {
 
-constexpr int kConnectAttemptMs = 200;
+constexpr int kConnectTimeoutMs = 2000;
 constexpr size_t kReadChunk = 512;
+bool s_request_active = false;
 
 void poll(PollFn fn) {
   if (fn != nullptr) {
@@ -30,22 +33,27 @@ void poll(PollFn fn) {
   }
 }
 
-int performGetWithPoll(HTTPClient& http, unsigned long timeout_ms, PollFn fn) {
-  http.setConnectTimeout(kConnectAttemptMs);
-  const unsigned long deadline = millis() + timeout_ms;
-  while (millis() < deadline) {
-    poll(fn);
-    const int code = http.GET();
-    if (code > 0) {
-      return code;
-    }
-    if (code != HTTPC_ERROR_CONNECTION_REFUSED &&
-        code != HTTPC_ERROR_NOT_CONNECTED) {
-      return code;
-    }
-    delay(5);
+const char* requestCategory(const char* url) {
+  if (url != nullptr && strstr(url, "opendata.adsb.fi") != nullptr)
+    return "ADSB";
+  if (url != nullptr && strstr(url, "api.adsbdb.com") != nullptr)
+    return "ROUTE";
+  if (url != nullptr && strstr(url, "elevation-tiles-prod") != nullptr)
+    return "TERRAIN";
+  return "OTHER";
+}
+
+void logHeap(const char* category, const char* event, int status) {
+  const size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  if (status == INT_MIN) {
+    logf("HTTP %s %s free=%u largest=%u\n", category, event,
+         static_cast<unsigned>(free_heap), static_cast<unsigned>(largest));
+  } else {
+    logf("HTTP %s %s status=%d free=%u largest=%u\n", category, event,
+         status, static_cast<unsigned>(free_heap),
+         static_cast<unsigned>(largest));
   }
-  return HTTPC_ERROR_READ_TIMEOUT;
 }
 
 /**
@@ -138,13 +146,31 @@ class StreamBodyReader : public BodyReader {
 
 int HttpClient::getStatus(const char* url, BodyFn on_body,
                           unsigned long timeout_ms, PollFn fn) {
+  const char* category = requestCategory(url);
+  if (s_request_active) {
+    logf("HTTP %s deferred: another request is active\n", category);
+    return 0;
+  }
+  struct ActiveRequest {
+    ActiveRequest() { s_request_active = true; }
+    ~ActiveRequest() { s_request_active = false; }
+  } active_request;
+  int result = 0;
+  int log_status = 0;
+  struct RequestLog {
+    const char* category;
+    int* result;
+    ~RequestLog() { logHeap(category, "end", *result); }
+  } request_log{category, &log_status};
+  logHeap(category, "start", INT_MIN);
+
   WiFiClientSecure client;
   client.setInsecure();
 
   HTTPClient http;
   if (!http.begin(client, url)) {
     logf("http: begin failed\n");
-    return 0;
+    return result;
   }
 
   // adsb.fi/Cloudflare may use HTTP/1.1 chunked transfer encoding. The
@@ -152,11 +178,18 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
   // HTTP/1.0 and receive an unframed close-delimited body instead.
   http.useHTTP10(true);
   http.setTimeout(timeout_ms);
-  const int code = performGetWithPoll(http, timeout_ms, fn);
+  http.setConnectTimeout(kConnectTimeoutMs);
+  poll(fn);
+  // Exactly one transport attempt per logical request. Retrying GET() here on
+  // NOT_CONNECTED used to create a new TLS handshake every ~5 ms after an
+  // mbedTLS allocation failure; subsystem-level cadence/backoff owns retries.
+  const int code = http.GET();
+  log_status = code;
   if (code != HTTP_CODE_OK && code != HTTP_CODE_NOT_FOUND) {
     logf("http: HTTP %d\n", code);
     http.end();
-    return code > 0 ? code : 0;
+    result = code > 0 ? code : 0;
+    return result;
   }
 
   WiFiClient* stream = http.getStreamPtr();
@@ -168,7 +201,9 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
   StreamBodyReader body(http, *stream, millis() + timeout_ms, fn);
   const bool ok = on_body(body);
   http.end();
-  return ok ? code : 0;
+  result = ok ? code : 0;
+  log_status = result;
+  return result;
 }
 
 bool HttpClient::get(const char* url, BodyFn on_body, unsigned long timeout_ms,

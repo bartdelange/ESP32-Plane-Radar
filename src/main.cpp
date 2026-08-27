@@ -29,6 +29,7 @@ unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
 bool g_terrain_download_active = false;
+bool g_logged_radar_heap = false;
 
 void showRadarIfConnected() {
   if (!wifiIsConnected()) {
@@ -37,6 +38,10 @@ void showRadarIfConnected() {
   }
   ui::radarDisplayDraw();
   g_radar_visible = true;
+  if (!g_logged_radar_heap) {
+    pf::logHeapState("radar-frame");
+    g_logged_radar_heap = true;
+  }
 }
 
 /**
@@ -170,6 +175,7 @@ void setup() {
 
   bootButtonInit();
   displayInit();
+  pf::logHeapState("display-init");
   if (wifiShowsSetupScreenOnBoot()) {
     statusScreenPortal();
   }

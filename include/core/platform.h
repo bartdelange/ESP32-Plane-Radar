@@ -35,6 +35,9 @@ void sleepMs(unsigned long ms);
 /** printf semantics — no implicit newline, matching Serial.printf. */
 void logf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
+/** Device heap diagnostic; a no-op on native. */
+void logHeapState(const char* point);
+
 // --- Reboot ------------------------------------------------------------------
 
 /**

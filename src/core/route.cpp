@@ -106,9 +106,19 @@ void foldAscii(const char* in, char* out, size_t out_len) {
   out[written] = '\0';
 }
 
+bool consumeLookupBudget(bool attempted, bool transient_failure,
+                         uint8_t* remaining) {
+  if (remaining == nullptr) return false;
+  if (!attempted) return *remaining > 0;
+  if (*remaining > 0) --*remaining;
+  if (transient_failure) *remaining = 0;
+  return *remaining > 0;
+}
+
 bool resolve(const char* callsign, Info* out, bool allow_network,
-             bool* network_attempted, void (*poll)()) {
+             bool* network_attempted, void (*poll)(), bool* transient_failure) {
   if (network_attempted != nullptr) *network_attempted = false;
+  if (transient_failure != nullptr) *transient_failure = false;
   *out = Info{};
   if (!config::kRouteLookupEnabled || !looksLikeAirlineCallsign(callsign))
     return false;
@@ -135,6 +145,7 @@ bool resolve(const char* callsign, Info* out, bool allow_network,
   const int status =
       platform::HttpClient::getStatus(url, parseResponse, 8000, poll);
   const bool parsed_response = status == 200 || status == 404;
+  if (transient_failure != nullptr) *transient_failure = !parsed_response;
 
   if (entry == nullptr) entry = claimSlot();
   *entry = CacheEntry{};

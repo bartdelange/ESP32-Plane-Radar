@@ -33,6 +33,13 @@ void logf(const char* fmt, ...) {
   }
 }
 
+void logHeapState(const char* point) {
+  logf("HEAP %s free=%u largest=%u\n", point != nullptr ? point : "?",
+       static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_8BIT)),
+       static_cast<unsigned>(
+           heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+}
+
 void reboot() {
   delay(800);
   esp_restart();
