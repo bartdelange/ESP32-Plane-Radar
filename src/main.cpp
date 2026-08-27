@@ -206,7 +206,8 @@ void setup() {
   core::adsb::setPollFn(pollWifi);
   core::terrain::setPollFn(pollWifi);
   core::terrain::setPngDecoder(platform_png::decode);
-  platform_png::setScratch(ui::radarDisplayFrameScratch);
+  platform_png::setScratch(ui::radarDisplayFrameScratch,
+                           ui::radarDisplayFrameScratchRelease);
 
   pf::logHeapState("wifi-before");
   if (wifiSetupConnect()) {

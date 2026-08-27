@@ -31,5 +31,7 @@ void radarDisplayTick();
  * so the caller must repaint the whole frame afterwards.
  */
 uint8_t* radarDisplayFrameScratch(size_t need_bytes);
+/** Release PNG scratch and mark its former pixel contents invalid. */
+void radarDisplayFrameScratchRelease();
 
 }  // namespace ui

@@ -7,6 +7,7 @@
 #include <cstdlib>
 
 #include "config.h"
+#include "core/frame_ownership.h"
 #include "core/geo.h"
 #include "core/platform.h"
 #include "ui/display.h"
@@ -64,6 +65,7 @@ lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
 bool s_frame_ready = false;
 bool s_frame_attempted = false;
+core::frame::Ownership s_frame_ownership;
 bool s_tag_cycle_active = false;
 unsigned long s_tag_cycle_phase_drawn = 0;
 
@@ -739,6 +741,7 @@ bool ensureFrameSprite() {
     return false;
   }
   s_frame_ready = true;
+  s_frame_ownership.allocated();
   core::platform::logHeapState("frame-after");
   return true;
 }
@@ -747,12 +750,23 @@ bool ensureFrameSprite() {
 // sprite, then blit it to the panel in a single pushSprite. Because the panel
 // is updated in one pass, labels never show an erase/redraw gap — no flicker.
 void renderFrame() {
+  if (!s_frame_ownership.beginComposition()) {
+    core::platform::logf("radar: frame is busy; draw deferred\n");
+    return;
+  }
   drawStaticGrid(s_frame);  // opens its own DrawScope(s_frame)
   {
     const DrawScope scope(s_frame);
     drawAircraft();
   }
+  if (!s_frame_ownership.beginTransfer()) return;
   s_frame.pushSprite(0, 0);
+  // In pinned LovyanGFX 1.2.26, pushSprite() passes this DMA-capable sprite to
+  // Panel_LCD::writeImage(..., use_dma=true). Bus_SPI::writeBytes starts DMA,
+  // while endWrite/endTransaction does not wait. The next loop can lend the
+  // same bytes to PNG before a 115,200-byte transfer at 40 MHz has completed.
+  tft.waitDMA();
+  s_frame_ownership.finishTransfer();
   tft.setTextDatum(textdatum_t::top_left);
 }
 
@@ -805,7 +819,17 @@ uint8_t* radarDisplayFrameScratch(size_t need_bytes) {
   if (need_bytes > kFrameBytes) {
     return nullptr;
   }
+  // Defensive even though renderFrame waits: no future push implementation may
+  // turn this lease into an implicit race with an outstanding transfer.
+  tft.waitDMA();
+  if (!s_frame_ownership.acquireScratch()) {
+    return nullptr;
+  }
   return static_cast<uint8_t*>(s_frame.getBuffer());
+}
+
+void radarDisplayFrameScratchRelease() {
+  s_frame_ownership.releaseScratch();
 }
 
 }  // namespace ui

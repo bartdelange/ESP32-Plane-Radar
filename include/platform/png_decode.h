@@ -49,7 +49,8 @@ constexpr size_t kScratchBytes = 32768 + 2048 + 1024;
  * until that image is decoded — nothing is retained between calls.
  */
 using ScratchFn = uint8_t* (*)(size_t need_bytes);
-void setScratch(ScratchFn fn);
+using ScratchReleaseFn = void (*)();
+void setScratch(ScratchFn fn, ScratchReleaseFn release = nullptr);
 
 /**
  * Decode a PNG straight off an HTTP body, invoking `on_pixel` once per pixel in

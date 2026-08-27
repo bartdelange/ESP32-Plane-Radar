@@ -54,6 +54,7 @@ static_assert(sizeof(Work) <= kScratchBytes,
               "kScratchBytes no longer covers the decoder's working set");
 
 ScratchFn s_scratch_fn = nullptr;
+ScratchReleaseFn s_scratch_release_fn = nullptr;
 
 /** Length codes 257..285: base length and extra bits (RFC 1951, 3.2.5). */
 constexpr uint16_t kLenBase[29] = {3,  4,  5,  6,  7,  8,  9,  10, 11,  13,
@@ -701,7 +702,10 @@ class Decoder {
 
 }  // namespace
 
-void setScratch(ScratchFn fn) { s_scratch_fn = fn; }
+void setScratch(ScratchFn fn, ScratchReleaseFn release) {
+  s_scratch_fn = fn;
+  s_scratch_release_fn = release;
+}
 
 bool decode(core::platform::BodyReader& body, core::terrain::PixelFn on_pixel,
             void* ctx) {
@@ -716,6 +720,11 @@ bool decode(core::platform::BodyReader& body, core::terrain::PixelFn on_pixel,
     core::platform::logf("png: no scratch available\n");
     return false;
   }
+  struct ScratchLease {
+    ~ScratchLease() {
+      if (s_scratch_release_fn != nullptr) s_scratch_release_fn();
+    }
+  } lease;
 
   IdatReader idat(body);
   int width = 0;

@@ -71,6 +71,7 @@ uint8_t s_scratch[platform_png::kScratchBytes + kGuardBytes];
 
 bool s_scratch_offered = true;
 size_t s_scratch_asked = 0;
+size_t s_scratch_released = 0;
 
 uint8_t* lendScratch(size_t need_bytes) {
   s_scratch_asked = need_bytes;
@@ -79,6 +80,8 @@ uint8_t* lendScratch(size_t need_bytes) {
   }
   return s_scratch;
 }
+
+void releaseScratch() { ++s_scratch_released; }
 
 bool guardIntact() {
   for (size_t i = platform_png::kScratchBytes; i < sizeof(s_scratch); ++i) {
@@ -472,14 +475,23 @@ void test_missing_adler_is_rejected(void) {
   assertRejectedWithRasterComplete(fx::kRejectMissingAdler);
 }
 
+void test_scratch_is_released_after_success_and_failure(void) {
+  assertDecodes(fx::kFilterNone);
+  TEST_ASSERT_EQUAL_UINT(1, s_scratch_released);
+
+  TEST_ASSERT_FALSE(decodeFixture(fx::kRejectBadSignature));
+  TEST_ASSERT_EQUAL_UINT(2, s_scratch_released);
+}
+
 void setUp(void) {
   memset(s_scratch, kGuardByte, sizeof(s_scratch));
   s_scratch_offered = true;
   s_scratch_asked = 0;
+  s_scratch_released = 0;
   s_capture = Capture{};
   s_log_lines = 0;
   s_log_first[0] = '\0';
-  platform_png::setScratch(lendScratch);
+  platform_png::setScratch(lendScratch, releaseScratch);
 }
 
 void tearDown(void) {}
@@ -518,6 +530,7 @@ int main(int, char**) {
   RUN_TEST(test_wrong_adler_is_rejected);
   RUN_TEST(test_silent_corruption_is_caught_by_the_checksum);
   RUN_TEST(test_missing_adler_is_rejected);
+  RUN_TEST(test_scratch_is_released_after_success_and_failure);
 
   RUN_TEST(test_a_stream_that_runs_past_the_last_row_is_rejected);
 
