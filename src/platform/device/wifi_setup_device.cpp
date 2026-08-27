@@ -15,6 +15,7 @@
 
 #include "config.h"
 #include "core/button_edges.h"
+#include "core/platform.h"
 #include "core/portal_params.h"
 #include "platform/device/pins.h"
 #include "core/settings.h"
@@ -288,6 +289,7 @@ void startLanWebPortal() {
     return;
   }
   refreshPortalParamDefaults();
+  core::platform::logHeapState("lan-portal-before");
   WiFi.mode(WIFI_STA);
   s_wm.setConfigPortalBlocking(false);
 #ifdef WM_MDNS
@@ -299,6 +301,7 @@ void startLanWebPortal() {
   s_wm.startWebPortal();
   Serial.printf("LAN config: http://%s.local or http://%s\n",
                 config::kPortalHostname, WiFi.localIP().toString().c_str());
+  core::platform::logHeapState("lan-portal-after");
 }
 
 void stopLanWebPortal() {

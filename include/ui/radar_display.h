@@ -5,6 +5,11 @@
 
 namespace ui {
 
+/** Reserve the permanent RGB565 frame before Wi-Fi fragments device heap. */
+bool radarDisplayInitFrame();
+/** True only when the frame exists and can also lend PNG decoder scratch. */
+bool radarDisplayFrameReady();
+
 /** Draw the static sonar/radar grid (black disc, green overlay, labels). */
 void radarDisplayDraw();
 

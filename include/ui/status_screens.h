@@ -1,5 +1,6 @@
 #pragma once
 
+void statusScreenStarting();
 void statusScreenPortal();
 void statusScreenConnectFailed();
 void statusScreenWifiReset();

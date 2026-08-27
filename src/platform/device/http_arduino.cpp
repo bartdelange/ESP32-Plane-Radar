@@ -44,14 +44,17 @@ const char* requestCategory(const char* url) {
 }
 
 void logHeap(const char* category, const char* event, int status) {
-  const size_t free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  const size_t free_heap = ESP.getFreeHeap();
+  const size_t free_8bit = heap_caps_get_free_size(MALLOC_CAP_8BIT);
   const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
   if (status == INT_MIN) {
-    logf("HTTP %s %s free=%u largest=%u\n", category, event,
-         static_cast<unsigned>(free_heap), static_cast<unsigned>(largest));
+    logf("HTTP %s %s free=%u free8=%u largest=%u\n", category, event,
+         static_cast<unsigned>(free_heap), static_cast<unsigned>(free_8bit),
+         static_cast<unsigned>(largest));
   } else {
-    logf("HTTP %s %s status=%d free=%u largest=%u\n", category, event,
-         status, static_cast<unsigned>(free_heap),
+    logf("HTTP %s %s status=%d free=%u free8=%u largest=%u\n", category,
+         event, status, static_cast<unsigned>(free_heap),
+         static_cast<unsigned>(free_8bit),
          static_cast<unsigned>(largest));
   }
 }

@@ -30,6 +30,7 @@ unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
 bool g_terrain_download_active = false;
 bool g_logged_radar_heap = false;
+bool g_logged_no_terrain_scratch = false;
 
 void showRadarIfConnected() {
   if (!wifiIsConnected()) {
@@ -141,6 +142,13 @@ void maybeFetchTerrain() {
   if (!g_radar_visible || !wifiIsConnected() || !ui::radar::showTerrain()) {
     return;
   }
+  if (!ui::radarDisplayFrameReady()) {
+    if (!g_logged_no_terrain_scratch) {
+      pf::logf("terrain: disabled because frame scratch is unavailable\n");
+      g_logged_no_terrain_scratch = true;
+    }
+    return;
+  }
   const double lat = core::settings::lat();
   const double lon = core::settings::lon();
   const uint8_t range_idx = ui::radar::rangeIndex();
@@ -160,9 +168,11 @@ void fetchAndDrawAircraft() {
   const float fetch_km = ui::radar::fetchRadiusKm();
   if (!core::adsb::fetchUpdate(core::settings::lat(), core::settings::lon(),
                                fetch_km)) {
+    pf::logHeapState("adsb-after");
     handleBootButton();
     return;
   }
+  pf::logHeapState("adsb-after");
   ui::radarDisplayRefreshAircraft();
   handleBootButton();
 }
@@ -176,10 +186,13 @@ void setup() {
   bootButtonInit();
   displayInit();
   pf::logHeapState("display-init");
+  ui::radarDisplayInitFrame();
+  statusScreenStarting();
   if (wifiShowsSetupScreenOnBoot()) {
     statusScreenPortal();
   }
   core::settings::init();
+  pf::logHeapState("settings-init");
   // After init(), not before: init() seeds s_lat/s_lon from storage, and the
   // hook must not fire on that initial load, only on later moves.
   core::settings::setCenterChangedFn(onCenterChanged);
@@ -189,7 +202,9 @@ void setup() {
   core::terrain::setPngDecoder(platform_png::decode);
   platform_png::setScratch(ui::radarDisplayFrameScratch);
 
+  pf::logHeapState("wifi-before");
   if (wifiSetupConnect()) {
+    pf::logHeapState("wifi-connected");
     showRadarIfConnected();
   }
 }

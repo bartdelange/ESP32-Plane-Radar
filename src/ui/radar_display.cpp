@@ -63,6 +63,7 @@ int s_scale_label_h = 0;
 lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
 bool s_frame_ready = false;
+bool s_frame_attempted = false;
 bool s_tag_cycle_active = false;
 unsigned long s_tag_cycle_phase_drawn = 0;
 
@@ -722,12 +723,23 @@ bool ensureFrameSprite() {
   if (s_frame_ready) {
     return true;
   }
+  if (s_frame_attempted) {
+    return false;
+  }
+  s_frame_attempted = true;
+  constexpr size_t kFrameBytes =
+      static_cast<size_t>(radar::kSize) * radar::kSize * 2;
+  core::platform::logf("radar: frame sprite request=%u bytes\n",
+                       static_cast<unsigned>(kFrameBytes));
+  core::platform::logHeapState("frame-before");
   s_frame.setColorDepth(16);
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     core::platform::logf("radar: frame sprite alloc failed\n");
+    core::platform::logHeapState("frame-failed");
     return false;
   }
   s_frame_ready = true;
+  core::platform::logHeapState("frame-after");
   return true;
 }
 
@@ -745,6 +757,10 @@ void renderFrame() {
 }
 
 }  // namespace
+
+bool radarDisplayInitFrame() { return ensureFrameSprite(); }
+
+bool radarDisplayFrameReady() { return s_frame_ready; }
 
 void radarDisplayDraw() {
   initPalette();

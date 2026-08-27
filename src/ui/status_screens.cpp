@@ -180,6 +180,15 @@ void drawSpinnerDots() {
 
 }  // namespace
 
+void statusScreenStarting() {
+  const TextLine lines[] = {
+      {"Plane Radar", 1.15f, &kGfxTitle},
+      {"Starting...", 1.0f, &kGfxBody},
+  };
+  drawTextBlock(config::kColorBlack, config::kTextOnBlack, lines,
+                sizeof(lines) / sizeof(lines[0]));
+}
+
 void statusScreenConnectingBegin(const char* ssid) {
   const char* name = (ssid != nullptr && ssid[0] != '\0') ? ssid : "network";
   strncpy(s_connecting_ssid, name, sizeof(s_connecting_ssid) - 1);
