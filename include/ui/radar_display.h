@@ -1,12 +1,7 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
-
 namespace ui {
 
-/** Reserve the permanent RGB565 frame before Wi-Fi fragments device heap. */
-bool radarDisplayInitFrame();
 /** Draw the static sonar/radar grid (black disc, green overlay, labels). */
 void radarDisplayDraw();
 

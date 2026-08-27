@@ -137,7 +137,6 @@ void setup() {
 
   bootButtonInit();
   displayInit();
-  ui::radarDisplayInitFrame();
   statusScreenStarting();
   if (wifiShowsSetupScreenOnBoot()) {
     statusScreenPortal();

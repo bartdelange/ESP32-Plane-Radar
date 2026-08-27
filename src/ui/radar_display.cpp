@@ -61,7 +61,6 @@ int s_scale_label_h = 0;
 lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
 bool s_frame_ready = false;
-bool s_frame_attempted = false;
 bool s_tag_cycle_active = false;
 unsigned long s_tag_cycle_phase_drawn = 0;
 
@@ -716,10 +715,6 @@ bool ensureFrameSprite() {
   if (s_frame_ready) {
     return true;
   }
-  if (s_frame_attempted) {
-    return false;
-  }
-  s_frame_attempted = true;
   s_frame.setColorDepth(16);
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     core::platform::logf("radar: frame sprite alloc failed\n");
@@ -739,15 +734,10 @@ void renderFrame() {
     drawAircraft();
   }
   s_frame.pushSprite(0, 0);
-  // pushSprite uses asynchronous DMA for this buffer. Keep composition from
-  // modifying it until the panel transfer has consumed the complete frame.
-  tft.waitDMA();
   tft.setTextDatum(textdatum_t::top_left);
 }
 
 }  // namespace
-
-bool radarDisplayInitFrame() { return ensureFrameSprite(); }
 
 void radarDisplayDraw() {
   initPalette();
