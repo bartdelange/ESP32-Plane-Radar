@@ -13,6 +13,8 @@
 #include "ui/display_font.h"
 #include "core/adsb.h"
 #include "core/settings.h"
+#include "core/tag_collision.h"
+#include "core/tag_content.h"
 #include "core/track_history.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
@@ -262,7 +264,8 @@ void noseTip(int cx, int cy, float heading_deg, int* tip_x, int* tip_y) {
   *tip_y = cy - static_cast<int>(lroundf(cosf(rad) * radar::kAircraftNoseLenPx));
 }
 
-void drawHeadingTriangle(int cx, int cy, float heading_deg, uint16_t color) {
+void drawHeadingTriangleSized(int cx, int cy, float heading_deg, int nose_len,
+                              int tail_len, int tail_half, uint16_t color) {
   constexpr float kDegToRad = 0.01745329252f;
   const float rad = heading_deg * kDegToRad;
   const float sin_h = sinf(rad);
@@ -270,18 +273,32 @@ void drawHeadingTriangle(int cx, int cy, float heading_deg, uint16_t color) {
 
   int tip_x = 0;
   int tip_y = 0;
-  noseTip(cx, cy, heading_deg, &tip_x, &tip_y);
+  tip_x = cx + static_cast<int>(lroundf(sin_h * nose_len));
+  tip_y = cy - static_cast<int>(lroundf(cos_h * nose_len));
 
   const int base_x =
-      cx - static_cast<int>(lroundf(sin_h * static_cast<float>(radar::kAircraftTailLenPx)));
+      cx - static_cast<int>(lroundf(sin_h * static_cast<float>(tail_len)));
   const int base_y =
-      cy + static_cast<int>(lroundf(cos_h * static_cast<float>(radar::kAircraftTailLenPx)));
+      cy + static_cast<int>(lroundf(cos_h * static_cast<float>(tail_len)));
 
-  const int wing_x = static_cast<int>(lroundf(cos_h * radar::kAircraftTailHalfPx));
-  const int wing_y = static_cast<int>(lroundf(sin_h * radar::kAircraftTailHalfPx));
+  const int wing_x = static_cast<int>(lroundf(cos_h * tail_half));
+  const int wing_y = static_cast<int>(lroundf(sin_h * tail_half));
 
   s_draw->fillTriangle(tip_x, tip_y, base_x + wing_x, base_y + wing_y,
                        base_x - wing_x, base_y - wing_y, color);
+}
+
+void drawAircraftSymbol(int cx, int cy, float heading_deg, bool highlighted) {
+  if (highlighted) {
+    constexpr int kOutlinePx = 1;
+    drawHeadingTriangleSized(
+        cx, cy, heading_deg, radar::kAircraftNoseLenPx + kOutlinePx,
+        radar::kAircraftTailLenPx + kOutlinePx,
+        radar::kAircraftTailHalfPx + kOutlinePx, radar::kColorLabel);
+  }
+  drawHeadingTriangleSized(cx, cy, heading_deg, radar::kAircraftNoseLenPx,
+                           radar::kAircraftTailLenPx,
+                           radar::kAircraftTailHalfPx, radar::kColorAircraft);
 }
 
 void drawSpeedVector(int cx, int cy, float heading_deg, float track_deg,
@@ -342,6 +359,8 @@ void buildAircraftTag(int x, int y, const core::adsb::Aircraft& plane,
   *out = TagLayout{};
   TagLayout& tag = *out;
 
+  if (plane.callsign[0] != '\0')
+    tag.lines[tag.line_count++] = {plane.callsign, radar::kColorLabel};
   if (!compact) {
     const auto mode = ui::radar::airlineDisplay();
     const char* airline = nullptr;
@@ -353,8 +372,6 @@ void buildAircraftTag(int x, int y, const core::adsb::Aircraft& plane,
     if (airline != nullptr && airline[0] != '\0')
       tag.lines[tag.line_count++] = {airline, radar::kColorLabel};
   }
-  if (plane.callsign[0] != '\0')
-    tag.lines[tag.line_count++] = {plane.callsign, radar::kColorLabel};
   if (!compact && plane.type[0] != '\0')
     tag.lines[tag.line_count++] = {plane.type, radar::kColorTagType};
   if (!compact && plane.alt[0] != '\0') {
@@ -372,8 +389,9 @@ void buildAircraftTag(int x, int y, const core::adsb::Aircraft& plane,
                                : radar::kColorTagAltitude;
     tag.lines[tag.line_count++] = {tag.altitude, color};
   }
-  if (!compact &&
-      (plane.route_origin[0] != '\0' || plane.route_destination[0] != '\0')) {
+  if (core::tag_content::showRouteLine(
+          compact, core::settings::showRoutes(), plane.route_origin,
+          plane.route_destination)) {
     snprintf(tag.route, sizeof(tag.route), "%s > %s",
              plane.route_origin[0] ? plane.route_origin : "?",
              plane.route_destination[0] ? plane.route_destination : "?");
@@ -389,7 +407,8 @@ void buildAircraftTag(int x, int y, const core::adsb::Aircraft& plane,
       block_w = w;
     }
   }
-  const int block_h = tag.line_h * tag.line_count;
+  const int block_h =
+      core::tag_content::blockHeight(tag.line_h, tag.line_count);
   int ly = y - block_h / 2;
 
   const int symbol_half =
@@ -426,12 +445,6 @@ void drawAircraftTag(const TagLayout& tag) {
     s_draw->drawString(tag.lines[i].text, tag.anchor_x, y);
     y += tag.line_h;
   }
-}
-
-bool tagsOverlap(const TagLayout& a, const TagLayout& b) {
-  constexpr int kPad = 2;
-  return a.x0 - kPad < b.x1 + kPad && a.x1 + kPad > b.x0 - kPad &&
-         a.y0 - kPad < b.y1 + kPad && a.y1 + kPad > b.y0 - kPad;
 }
 
 struct AircraftDrawItem {
@@ -555,7 +568,6 @@ void drawAircraft() {
     drawTrackPath(planes[i]);
     drawSpeedVector(x, y, planes[i].nose_deg, planes[i].track_deg,
                     planes[i].gs_knots, radar::kColorTrackVector);
-    drawHeadingTriangle(x, y, planes[i].nose_deg, radar::kColorAircraft);
   }
   // Only tagged aircraft count toward the compact threshold. Targets beyond the
   // outer ring are drawn as bare rim dots with no tag at all, so counting them
@@ -565,46 +577,30 @@ void drawAircraft() {
       static_cast<int>(draw_count) > radar::kTagCompactAboveCount;
 
   static TagLayout tags[core::adsb::kMaxAircraft];
-  int parent[core::adsb::kMaxAircraft];
-  int group_size[core::adsb::kMaxAircraft] = {};
+  core::tag_collision::Bounds bounds[core::adsb::kMaxAircraft];
+  bool tag_visible[core::adsb::kMaxAircraft] = {};
+  bool highlighted[core::adsb::kMaxAircraft] = {};
   for (size_t d = 0; d < draw_count; ++d) {
     buildAircraftTag(items[d].x, items[d].y, planes[items[d].index], compact,
                      &tags[d]);
-    parent[d] = static_cast<int>(d);
+    bounds[d].x0 = tags[d].x0;
+    bounds[d].y0 = tags[d].y0;
+    bounds[d].x1 = tags[d].x1;
+    bounds[d].y1 = tags[d].y1;
+    bounds[d].visible = tags[d].line_count > 0;
   }
-  auto root = [&](int i) {
-    while (parent[i] != i) {
-      parent[i] = parent[parent[i]];
-      i = parent[i];
-    }
-    return i;
-  };
-  for (size_t i = 0; i < draw_count; ++i) {
-    for (size_t j = i + 1; j < draw_count; ++j) {
-      if (tagsOverlap(tags[i], tags[j])) {
-        const int ri = root(static_cast<int>(i));
-        const int rj = root(static_cast<int>(j));
-        if (ri != rj) parent[rj] = ri;
-      }
-    }
-  }
-  for (size_t i = 0; i < draw_count; ++i) ++group_size[root(static_cast<int>(i))];
   const unsigned long phase =
       core::platform::nowMs() / config::kTagCycleIntervalMs;
   s_tag_cycle_phase_drawn = phase;
+  core::tag_collision::select(bounds, draw_count, phase, tag_visible,
+                              highlighted);
   s_tag_cycle_active = false;
-  for (size_t i = 0; i < draw_count; ++i) {
-    const int r = root(static_cast<int>(i));
-    if (group_size[r] == 1) {
-      drawAircraftTag(tags[i]);
-      continue;
-    }
-    s_tag_cycle_active = true;
-    int position = 0;
-    for (size_t j = 0; j < i; ++j)
-      if (root(static_cast<int>(j)) == r) ++position;
-    if (position == static_cast<int>(phase % group_size[r]))
-      drawAircraftTag(tags[i]);
+  for (size_t d = 0; d < draw_count; ++d) {
+    const size_t i = items[d].index;
+    drawAircraftSymbol(items[d].x, items[d].y, planes[i].nose_deg,
+                       highlighted[d]);
+    if (tag_visible[d]) drawAircraftTag(tags[d]);
+    if (highlighted[d]) s_tag_cycle_active = true;
   }
 }
 

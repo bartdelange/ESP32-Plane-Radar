@@ -92,27 +92,33 @@ WiFiManagerParameter* s_params[kMaxPortalFields] = {nullptr};
 char s_attrs[kMaxPortalFields][core::portal::kHtmlAttrsMax];
 size_t s_param_count = 0;
 
-// Airline label selector. Custom-HTML-only param renders a <select
-// name="airline_mode">; the value is read back from the web server on save.
-char s_airline_select_html[320] = "";
-WiFiManagerParameter s_param_airline(s_airline_select_html);
+// Selectors are custom HTML because WiFiManagerParameter has no select kind.
+// Values are read from the web server on save and still use the shared fields.
+char s_select_html[520] = "";
+WiFiManagerParameter s_param_selects(s_select_html);
 
-void buildAirlineSelectHtml() {
-  const uint8_t cur = static_cast<uint8_t>(ui::radar::airlineDisplay());
-  const char* options[] = {"None", "Full Airline Name", "Airline Abbreviation"};
-  int n = snprintf(s_airline_select_html, sizeof(s_airline_select_html),
+void buildSelectHtml() {
+  const uint8_t airline = static_cast<uint8_t>(ui::radar::airlineDisplay());
+  const char* airline_options[] = {"None", "Full Airline Name",
+                                   "Airline Abbreviation"};
+  int n = snprintf(s_select_html, sizeof(s_select_html),
                    "<br/><label for='airline_mode'>Show:</label>"
                    "<select name='airline_mode' id='airline_mode'>");
   for (uint8_t i = 0; i < 3 && n > 0 &&
-                      n < static_cast<int>(sizeof(s_airline_select_html));
+                      n < static_cast<int>(sizeof(s_select_html));
        ++i) {
-    n += snprintf(s_airline_select_html + n, sizeof(s_airline_select_html) - n,
+    n += snprintf(s_select_html + n, sizeof(s_select_html) - n,
                   "<option value='%u'%s>%s</option>", i,
-                  i == cur ? " selected" : "", options[i]);
+                  i == airline ? " selected" : "", airline_options[i]);
   }
-  if (n > 0 && n < static_cast<int>(sizeof(s_airline_select_html))) {
-    snprintf(s_airline_select_html + n, sizeof(s_airline_select_html) - n,
-             "</select>");
+  if (n > 0 && n < static_cast<int>(sizeof(s_select_html))) {
+    snprintf(s_select_html + n, sizeof(s_select_html) - n,
+             "</select><br/><label for='route_display'>Route display:</label>"
+             "<select name='route_display' id='route_display'>"
+             "<option value='1'%s>On</option>"
+             "<option value='0'%s>Off</option></select>",
+             core::settings::showRoutes() ? " selected" : "",
+             core::settings::showRoutes() ? "" : " selected");
   }
 }
 
@@ -124,7 +130,7 @@ void refreshPortalParamDefaults() {
     core::portal::currentValue(fields[i], value, sizeof(value));
     s_params[i]->setValue(value, fields[i].max_len);
   }
-  buildAirlineSelectHtml();
+  buildSelectHtml();
 }
 
 void onPortalParamsSaved() {
@@ -136,6 +142,8 @@ void onPortalParamsSaved() {
   if (s_wm.server) {
     core::settings::saveAirlineDisplayFromPortal(
         s_wm.server->arg("airline_mode").c_str());
+    core::settings::saveRouteDisplayFromPortal(
+        s_wm.server->arg("route_display").c_str());
   }
 }
 
@@ -158,8 +166,8 @@ void attachPortalParams(WiFiManager& wm) {
     wm.addParameter(s_params[s_param_count]);
     ++s_param_count;
   }
-  buildAirlineSelectHtml();
-  wm.addParameter(&s_param_airline);
+  buildSelectHtml();
+  wm.addParameter(&s_param_selects);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
 

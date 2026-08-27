@@ -24,6 +24,7 @@ constexpr Field kFields[] = {
     {"show_terrain", "Show terrain", "type=\"checkbox\"", Kind::kCheckbox, 2,
      true},
     {"airline_mode", "Airline labels", "", Kind::kSelect, 2, false},
+    {"route_display", "Route display", "", Kind::kSelect, 2, false},
 };
 
 char s_pending_lat[24] = {};
@@ -62,6 +63,10 @@ void currentValue(const Field& field, char* buf, size_t len) {
   if (isField(field, "airline_mode")) {
     snprintf(buf, len, "%u",
              static_cast<unsigned>(settings::airlineDisplay()));
+    return;
+  }
+  if (isField(field, "route_display")) {
+    snprintf(buf, len, "%u", settings::showRoutes() ? 1U : 0U);
     return;
   }
   buf[0] = '\0';
@@ -111,6 +116,8 @@ void applyValue(const Field& field, const char* value) {
     settings::saveTerrainFromPortal(value);
   } else if (isField(field, "airline_mode")) {
     settings::saveAirlineDisplayFromPortal(value);
+  } else if (isField(field, "route_display")) {
+    settings::saveRouteDisplayFromPortal(value);
   }
 }
 

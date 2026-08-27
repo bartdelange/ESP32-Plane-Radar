@@ -292,8 +292,13 @@ void appendField(std::string* html, const core::portal::Field& field) {
     *html += "\" id=\"";
     *html += field.id;
     *html += "\">";
-    const char* labels[] = {"None", "Full Airline Name", "Airline Abbreviation"};
-    for (size_t i = 0; i < 3; ++i) {
+    const char* airline_labels[] = {"None", "Full Airline Name",
+                                    "Airline Abbreviation"};
+    const char* route_labels[] = {"Off", "On"};
+    const bool route = strcmp(field.id, "route_display") == 0;
+    const char** labels = route ? route_labels : airline_labels;
+    const size_t option_count = route ? 2 : 3;
+    for (size_t i = 0; i < option_count; ++i) {
       *html += "<option value=\"" + std::to_string(i) + "\"";
       if (value[0] == static_cast<char>('0' + i) && value[1] == '\0') {
         *html += " selected";

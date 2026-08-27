@@ -51,7 +51,7 @@ constexpr size_t kDefaultRangeCount =
  * Devices flashed before the manual coordinates were removed still carry an
  * orphaned "radar" namespace holding lat/lon. Nothing reads it.
  */
-constexpr char kNsRadar[] = "planeradar";   ///< keys: lat, lon, rangeIdx, useKm, showRwys, showTerr
+constexpr char kNsRadar[] = "planeradar";  ///< location, display and range keys
 
 // --- Lifecycle ---------------------------------------------------------------
 
@@ -104,22 +104,25 @@ void formatRangePresets(char* buf, size_t len);
 bool useKm();
 bool showRunways();
 bool showTerrain();
+bool showRoutes();
 AirlineDisplay airlineDisplay();
 
 /** Apply a WiFi portal checkbox value and persist it. */
 void saveKmFromPortal(const char* checkbox_value);
 void saveRunwaysFromPortal(const char* checkbox_value);
 void saveTerrainFromPortal(const char* checkbox_value);
+/** Apply the portal selector: 0 off, 1 on. */
+void saveRouteDisplayFromPortal(const char* select_value);
 /** Apply the portal selector: 0 none, 1 full name, 2 friendly abbreviation. */
 void saveAirlineDisplayFromPortal(const char* select_value);
 
 /**
- * Reset units and the runway/terrain overlays to their defaults.
+ * Reset units, overlays, airline labels and route display to their defaults.
  *
  * Note the asymmetry with clearLocation(), which resets the current location:
  * this deliberately does NOT reset the range preset. A Wi-Fi credential wipe
- * returns the display to NM with runways and terrain on, but leaves the user's
- * chosen zoom alone.
+ * returns the display to NM with runways, terrain and routes on, but leaves
+ * the user's chosen zoom alone.
  */
 void unitsReset();
 

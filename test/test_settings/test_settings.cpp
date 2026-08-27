@@ -197,6 +197,20 @@ void test_airline_display_accepts_only_known_selector_values(void) {
                           static_cast<uint8_t>(cs::airlineDisplay()));
 }
 
+void test_route_display_defaults_persists_and_resets(void) {
+  cs::unitsReset();
+  cs::init();
+  TEST_ASSERT_TRUE(cs::showRoutes());
+  cs::saveRouteDisplayFromPortal("0");
+  TEST_ASSERT_FALSE(cs::showRoutes());
+  cs::init();
+  TEST_ASSERT_FALSE(cs::showRoutes());
+  cs::unitsReset();
+  TEST_ASSERT_TRUE(cs::showRoutes());
+  cs::init();
+  TEST_ASSERT_TRUE(cs::showRoutes());
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -232,6 +246,7 @@ int main(int, char**) {
   RUN_TEST(test_rangeNext_cycles_and_wraps);
   RUN_TEST(test_unitsReset_leaves_range_alone);
   RUN_TEST(test_airline_display_accepts_only_known_selector_values);
+  RUN_TEST(test_route_display_defaults_persists_and_resets);
 
 
   return UNITY_END();

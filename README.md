@@ -158,9 +158,9 @@ grid and rendering behavior. Natural Earth data is public domain.
 
 ### Aircraft
 
-- **Inside the outer ring** — red heading triangle, magenta speed vector, and a fading recent track; vectors and tracks are clipped at the ring
+- **Inside the outer ring** — red heading triangle, magenta speed vector, and a fading recent track; vectors and tracks are clipped at the ring. The currently selected member of an overlapping-tag group gets a thin white ownership outline
 - **Outside the ring** (still within ADS-B fetch) — small **red dot on the screen rim** at the correct bearing (direction cue; not distance-accurate past the ring)
-- **Tags** — optional airline, callsign, type, climb/descent-marked altitude, and origin/destination route; overlapping tags cycle so dense traffic remains readable
+- **Tags** — callsign, optional airline, type, climb/descent-marked altitude, and an optional origin/destination route; route display can be switched off in either configuration portal, and overlapping tags cycle so dense traffic remains readable
 
 As range decreases (or aircraft approach), targets move inward; beyond-ring dots become full symbols when they cross the outer ring.
 
