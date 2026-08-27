@@ -146,9 +146,15 @@ malformed saved data falls back to the defaults.
 
 ### Runways
 
-- Worldwide large airports plus medium and small airports in `LOCAL_COUNTRIES` (currently `NL`) from OurAirports; all open runway strips in range (helipads excluded)
+- The compiled data pack contains a common worldwide-large-airport base plus medium and small airports for its selected region (currently `NL`) from OurAirports; all open runway strips in range (helipads excluded)
 - Teal runway lines with one ICAO label per airport (e.g. `KJFK`); toggle in the Wi‑Fi setup portal
-- Update the embedded list: `python3 scripts/build_large_airports.py`
+- Regenerate both airport and Natural Earth land-mask data from the same region definition: `python3 scripts/build_region_pack.py --region NL`
+
+The firmware compiles one pack at a time; there is no runtime region selector or
+downloader. Add or adjust maintained regions only in `scripts/regions.py`, then
+run the coordinator above. This keeps airport coverage and land-mask bounds from
+drifting apart. The compact 512×512 land bitset preserves the existing terrain
+grid and rendering behavior. Natural Earth data is public domain.
 
 ### Aircraft
 
@@ -199,6 +205,7 @@ include/
     terrain.h              — land/water-aware terrain grid fetch and cache
     land_water.h           — generated regional land-mask lookup
     land_mask.h            — generated compact regional raster data
+    region_pack.h          — generated metadata for the selected compiled pack
     portal_params.h        — config-portal field table (one per destination)
     large_airports.h
   ui/                      — LovyanGFX drawing, shared by both destinations
@@ -212,6 +219,8 @@ include/
 data/
   ui_font.vlw              — embedded smooth UI font (Noto Sans Bold)
 scripts/
+  regions.py                 — shared maintained-region definitions
+  build_region_pack.py       — regenerate the selected airport + land-mask pack
   build_large_airports.py
   build_land_mask.py         — Natural Earth regional mask generator
   gen_png_fixtures.py        — PNG test fixtures for native_test_png

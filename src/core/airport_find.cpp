@@ -10,6 +10,7 @@ namespace {
 using data::large_airports::Airport;
 using data::large_airports::kAirportCount;
 using data::large_airports::kAirports;
+using data::large_airports::kBaseAirportCount;
 
 bool normalizeIcao(const char* icao, char out[5]) {
   if (icao == nullptr) {
@@ -32,6 +33,22 @@ bool normalizeIcao(const char* icao, char out[5]) {
 
 int identCompare(const char* a, const char* b) { return strcmp(a, b); }
 
+bool findInRange(const char* key, size_t begin, size_t end, Airport* out) {
+  size_t lo = begin;
+  size_t hi = end;
+  while (lo < hi) {
+    const size_t mid = lo + (hi - lo) / 2;
+    const int cmp = identCompare(kAirports[mid].ident, key);
+    if (cmp == 0) {
+      if (out != nullptr) *out = kAirports[mid];
+      return true;
+    }
+    if (cmp < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  return false;
+}
+
 }  // namespace
 
 bool findAirport(const char* icao, Airport* out) {
@@ -40,24 +57,8 @@ bool findAirport(const char* icao, Airport* out) {
     return false;
   }
 
-  size_t lo = 0;
-  size_t hi = kAirportCount;
-  while (lo < hi) {
-    const size_t mid = lo + (hi - lo) / 2;
-    const int cmp = identCompare(kAirports[mid].ident, key);
-    if (cmp == 0) {
-      if (out != nullptr) {
-        *out = kAirports[mid];
-      }
-      return true;
-    }
-    if (cmp < 0) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return false;
+  return findInRange(key, 0, kBaseAirportCount, out) ||
+         findInRange(key, kBaseAirportCount, kAirportCount, out);
 }
 
 }  // namespace core::airport
