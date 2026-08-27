@@ -43,3 +43,7 @@ void displayInit() {
     std::exit(1);
   }
 }
+
+uint16_t displayColor565(uint8_t r, uint8_t g, uint8_t b) {
+  return tft.color565(r, g, b);
+}

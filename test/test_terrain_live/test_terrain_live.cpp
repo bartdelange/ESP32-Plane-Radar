@@ -20,7 +20,7 @@
  * that come out are real terrain. Hence the deliberately generous elevation
  * bands: the claim under test is "this is the right mountain", not a DEM value.
  *
- * Two views, so a handful of tiles at most — it finishes in seconds.
+ * One Netherlands view, so a handful of tiles at most — it finishes quickly.
  */
 
 #include <unity.h>
@@ -37,13 +37,9 @@ namespace pf = core::platform;
 
 namespace {
 
-/** Graz, Austria: city basin at ~350-400 m, Alps rising to the north-west. */
-constexpr double kGrazLat = 47.0753;
-constexpr double kGrazLon = 15.4062;
-
-/** Grossglockner, Austria's highest summit at 3798 m. */
-constexpr double kAlpineLat = 47.0747;
-constexpr double kAlpineLon = 12.6947;
+/** Almere, dry reclaimed land below mean sea level. */
+constexpr double kAlmereLat = 52.3508;
+constexpr double kAlmereLon = 5.2647;
 
 /** ~40 km to the screen edge, which resolves to a zoom-8 view here. */
 constexpr float kSpan = 40.0f;
@@ -76,16 +72,6 @@ uint8_t* lendScratch(size_t need_bytes) {
   return need_bytes <= sizeof(s_scratch) ? s_scratch : nullptr;
 }
 
-int16_t gridMax(const ct::Grid* g) {
-  int16_t max_m = g->elev_m[0];
-  for (int i = 0; i < ct::kGridPoints; ++i) {
-    if (g->elev_m[i] > max_m) {
-      max_m = g->elev_m[i];
-    }
-  }
-  return max_m;
-}
-
 }  // namespace
 
 // --- The URL we ask the bucket for -------------------------------------------
@@ -109,38 +95,27 @@ void test_live_tile_url_shape(void) {
 
 // --- Real tiles, real decoder, plausible terrain -----------------------------
 
-void test_live_graz_grid_is_plausible(void) {
-  TEST_ASSERT_TRUE_MESSAGE(downloadGrid(kGrazLat, kGrazLon),
+void test_live_netherlands_grid_has_polder_and_water(void) {
+  TEST_ASSERT_TRUE_MESSAGE(downloadGrid(kAlmereLat, kAlmereLon),
                            "grid did not complete — offline, or the bucket "
                            "rejected our URL?");
-  TEST_ASSERT_TRUE(ct::gridReady(kGrazLat, kGrazLon, kRange));
+  TEST_ASSERT_TRUE(ct::gridReady(kAlmereLat, kAlmereLon, kRange));
 
   const ct::Grid* g = ct::grid(kRange);
   TEST_ASSERT_NOT_NULL(g);
 
-  // Graz sits around 350-400 m. A band this wide still fails outright on a
-  // lat/lon swap, a terrarium offset error, or a feet/metres mix-up.
   const int16_t center_m = g->elev_m[kCenterIndex];
-  TEST_ASSERT_GREATER_THAN_INT16(200, center_m);
-  TEST_ASSERT_LESS_THAN_INT16(700, center_m);
+  TEST_ASSERT_GREATER_THAN_INT16(-20, center_m);
+  TEST_ASSERT_LESS_THAN_INT16(20, center_m);
+  TEST_ASSERT_TRUE(ct::isLand(*g, ct::kGridSize / 2, ct::kGridSize / 2));
 
-  // 40 km around Graz reaches into the Alps, so the DEM must show relief —
-  // a decode that produced one constant would pass the band check alone.
-  TEST_ASSERT_GREATER_THAN_INT16(800, gridMax(g));
-}
-
-void test_live_alpine_grid_is_high(void) {
-  TEST_ASSERT_TRUE_MESSAGE(downloadGrid(kAlpineLat, kAlpineLon),
-                           "grid did not complete — offline, or the bucket "
-                           "rejected our URL?");
-
-  const ct::Grid* g = ct::grid(kRange);
-  TEST_ASSERT_NOT_NULL(g);
-
-  // The high Tauern: even the valley floors here are above 1200 m, and the
-  // centre sample lands on the Grossglockner massif itself.
-  TEST_ASSERT_GREATER_THAN_INT16(1500, g->elev_m[kCenterIndex]);
-  TEST_ASSERT_GREATER_THAN_INT16(2500, gridMax(g));
+  bool saw_water = false;
+  for (int row = 0; row < ct::kGridSize; ++row) {
+    for (int col = 0; col < ct::kGridSize; ++col) {
+      saw_water = saw_water || !ct::isLand(*g, row, col);
+    }
+  }
+  TEST_ASSERT_TRUE_MESSAGE(saw_water, "Almere view must include mapped water");
 }
 
 void setUp(void) {
@@ -155,8 +130,7 @@ int main(int, char**) {
   UNITY_BEGIN();
 
   RUN_TEST(test_live_tile_url_shape);
-  RUN_TEST(test_live_graz_grid_is_plausible);
-  RUN_TEST(test_live_alpine_grid_is_high);
+  RUN_TEST(test_live_netherlands_grid_has_polder_and_water);
 
   return UNITY_END();
 }

@@ -109,13 +109,14 @@ Layout and colors: `include/ui/radar_theme.h`.
 
 ### Terrain
 
-- Green-shaded elevation background under the grid: hypsometric bands from darker lowlands to lighter highlands; water and sea level keep the plain background
+- Green-shaded elevation background under the grid: hypsometric bands apply only to explicit land, including dry land below sea level; water keeps the plain background
 - Elevation from the [AWS Open Data terrain tiles](https://registry.opendata.aws/terrain-tiles/) bucket (`terrarium` PNGs — no key, no rate limit, no sign-up): each 256×256 tile carries 65 536 bare-earth samples, encoded per pixel as `R*256 + G + B/256 - 32768` metres
+- Land/water comes from an embedded 512×512 regional mask generated from [Natural Earth](https://www.naturalearthdata.com/) 1:10m land and lake polygons (public domain). The maintained `NL` region includes the Netherlands and its widest radar view; add future regions in `scripts/build_land_mask.py`
 - A view needs only the **1–4 tiles** its bounding box touches; the zoom is chosen per view as the highest one whose tiles still cover it in a 2×2 block, so wider ranges get coarser terrain and the 10 NM preset the finest
-- Tiles are decoded as they arrive and resampled straight into a **41×41 grid** (3.4 KB) — the raster is never held in RAM
+- Tiles are decoded as they arrive and resampled straight into a **41×41 grid** (3.4 KB elevation + 211-byte land bitset) — the raster is never held in RAM. The regional mask costs 32 KiB flash and no runtime network traffic
 - One tile per main-loop pass, so the radar keeps running while terrain loads; tiles are 60–150 KB, so a full grid arrives within a few seconds
 - **One** grid is cached, for the view on screen; changing range or centre re-fetches. A failed tile is retried in place, and a download that keeps failing backs off for 60 s
-- Needs Wi‑Fi; until the grid arrives the radar runs normally on the plain background
+- Needs Wi‑Fi for elevation; until the grid arrives the radar runs normally on the plain background. A view outside the maintained land-mask regions deliberately omits terrain instead of guessing water from elevation
 - Toggle with **Show terrain** in the Wi‑Fi setup portal (default: on)
 
 Tiles come over `https://` — the bucket policy requires it and answers plain HTTP with 403 — so a tile fetch needs a TLS session (~30 KB) and a decoder (~36 KB) while the 115 KB frame sprite is already up. On the ESP32-C3 that is about 13 KB more than the heap has, which makes memory, not bandwidth, this layer's real constraint.
@@ -191,7 +192,9 @@ include/
     adsb.h, aircraft.h     — ADS-B fetch and decode
     route.h                — adsbdb route/operator cache and lookup
     track_history.h        — bounded portable aircraft track history
-    terrain.h              — terrain-tile elevation grid fetch and cache
+    terrain.h              — land/water-aware terrain grid fetch and cache
+    land_water.h           — generated regional land-mask lookup
+    land_mask.h            — generated compact regional raster data
     portal_params.h        — config-portal field table (one per destination)
     large_airports.h
   ui/                      — LovyanGFX drawing, shared by both destinations
@@ -206,6 +209,7 @@ data/
   ui_font.vlw              — embedded smooth UI font (Noto Sans Bold)
 scripts/
   build_large_airports.py
+  build_land_mask.py         — Natural Earth regional mask generator
   gen_png_fixtures.py        — PNG test fixtures for native_test_png
 src/
   main.cpp                 — setup()/loop(), shared verbatim

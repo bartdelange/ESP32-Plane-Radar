@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "config.h"
+#include "core/land_water.h"
 #include "core/platform.h"
 #include "core/terrain.h"
 
@@ -42,9 +43,9 @@ std::deque<bool> s_outcomes;  ///< empty = every request succeeds
 
 void advanceMs(unsigned long ms) { s_fake_now_ms += ms; }
 
-/** Base search centre: Graz, with the Alps to the north-west. */
-constexpr double kBaseLat = 47.0753;
-constexpr double kBaseLon = 15.4062;
+/** Base search centre: Almere, inside the generated Netherlands mask. */
+constexpr double kBaseLat = 52.3676;
+constexpr double kBaseLon = 4.9041;
 /** ~55 km to the screen edge, i.e. the wide end of the range presets. */
 constexpr float kSpan = 55.4f;
 constexpr uint8_t kRange = 1;
@@ -209,6 +210,10 @@ void assertGridMatchesTiles(const View& v) {
       snprintf(msg, sizeof(msg), "grid sample row %d col %d", row, col);
       TEST_ASSERT_MESSAGE(got != 0, msg);
       TEST_ASSERT_EQUAL_INT16_MESSAGE(elevForTile(tile), got, msg);
+      bool expected_land = false;
+      TEST_ASSERT_TRUE(core::land_water::classify(lat, lon, &expected_land));
+      TEST_ASSERT_EQUAL_INT_MESSAGE(expected_land ? 1 : 0,
+                                    ct::isLand(*g, row, col) ? 1 : 0, msg);
     }
   }
 }
@@ -297,26 +302,12 @@ void test_four_tile_view_fills_the_whole_grid(void) {
   assertGridMatchesTiles(v);
 }
 
-void test_view_across_the_antimeridian_fills_the_whole_grid(void) {
-  // Tile x wraps at the antimeridian while the grid's pixel columns keep
-  // running east past the edge of the world, so the two share no origin. Left
-  // unhandled the download still completes and reports ready, with the columns
-  // in the wrapped tile stuck at sea level — a hard false shoreline across the
-  // disc rather than a visible failure.
+void test_view_outside_land_mask_stays_absent_without_network(void) {
   const View v = makeView(0.0, 179.8, kSpan);
-
-  const int span = 1 << v.zoom;
-  bool west_edge = false;
-  bool east_edge = false;
-  for (size_t i = 0; i < v.tile_count; ++i) {
-    west_edge = west_edge || v.tiles[i].x == 0;
-    east_edge = east_edge || v.tiles[i].x == span - 1;
-  }
-  TEST_ASSERT_TRUE_MESSAGE(west_edge && east_edge,
-                           "view does not straddle the antimeridian");
-
-  TEST_ASSERT_TRUE(runToCompletion(v, kRange));
-  assertGridMatchesTiles(v);
+  TEST_ASSERT_FALSE(ct::ensureGrid(v.lat, v.lon, kRange, v.span));
+  TEST_ASSERT_FALSE(ct::downloadActive());
+  TEST_ASSERT_FALSE(ct::gridReady(v.lat, v.lon, kRange));
+  TEST_ASSERT_EQUAL_INT(0, static_cast<int>(s_urls.size()));
 }
 
 // --- Request spacing ---------------------------------------------------------
@@ -525,7 +516,7 @@ int main(int, char**) {
 
   RUN_TEST(test_single_tile_view_fills_the_whole_grid);
   RUN_TEST(test_four_tile_view_fills_the_whole_grid);
-  RUN_TEST(test_view_across_the_antimeridian_fills_the_whole_grid);
+  RUN_TEST(test_view_outside_land_mask_stays_absent_without_network);
 
   RUN_TEST(test_requests_are_spaced_by_the_tile_interval);
 

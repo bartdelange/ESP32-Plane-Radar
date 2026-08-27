@@ -63,7 +63,8 @@ constexpr double kDefaultRadarLon = 4.9041;
  *
  * One terrain-RGB tile carries 256x256 samples, so grid resolution is limited
  * by our RAM rather than by the API: 41 gives ~6 px per sample on the 240 px
- * disc and costs 41*41*2 = 3.4 KB, of which exactly one is cached. Odd on
+ * disc and costs 41*41*2 = 3.4 KB for elevation plus a 211-byte land bitset,
+ * of which exactly one is cached. Odd on
  * purpose, so the middle grid point lands exactly on the radar centre.
  */
 constexpr int kTerrainGridSize = 41;

@@ -61,14 +61,17 @@ void initPixelToGridMap() {
   s_map_ready = true;
 }
 
-int bandAtPixel(const int32_t* row_elev, int x) {
+int bandAtPixel(const core::terrain::Grid& grid, const int32_t* row_elev,
+                int grid_row, int x) {
   const int c = s_cell[x];
   const int32_t west = row_elev[c];
   const int32_t elev_m =
       west + (((row_elev[c + 1] - west) * s_frac[x]) >> kFracBits);
-  return core::terrain::bandForElevation(static_cast<int16_t>(elev_m),
-                                         radar::kTerrainBandMinM,
-                                         radar::kTerrainBandCount);
+  const int nearest_col = c + (s_frac[x] >= kFracOne / 2 ? 1 : 0);
+  return core::terrain::bandForSample(
+      static_cast<int16_t>(elev_m),
+      core::terrain::isLand(grid, grid_row, nearest_col),
+      radar::kTerrainBandMinM, radar::kTerrainBandCount);
 }
 
 void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
@@ -89,12 +92,13 @@ void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
 
   // Neighbouring pixels almost always fall in the same band, so runs are
   // coalesced into one drawFastHLine each instead of 240 drawPixel calls.
-  // Band -1 (water / below the first floor) draws nothing: the plain
-  // background fill underneath stays visible.
+  // Band -1 (explicit water, or elevation outside the palette) draws nothing:
+  // the plain background fill underneath stays visible.
   int run_start = 0;
-  int run_band = bandAtPixel(row_elev, 0);
+  const int nearest_row = r + (wy >= kFracOne / 2 ? 1 : 0);
+  int run_band = bandAtPixel(grid, row_elev, nearest_row, 0);
   for (int x = 1; x < radar::kSize; ++x) {
-    const int band = bandAtPixel(row_elev, x);
+    const int band = bandAtPixel(grid, row_elev, nearest_row, x);
     if (band == run_band) {
       continue;
     }

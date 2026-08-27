@@ -26,6 +26,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "core/land_water.h"
 #include "core/settings.h"
 #include "core/terrain.h"
 
@@ -313,7 +314,7 @@ void test_tilePixel_reference_points(void) {
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, 3858868.0328533333, px);
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, 2516969.330662551, py);
 
-  // The radar's own default centre, Graz, at zoom 12.
+  // A representative European centre at zoom 12.
   ct::latLonToTilePixel(kLat, kLon, 12, &px, &py);
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, 569161.80992, px);
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, 368489.85464324185, py);
@@ -516,17 +517,42 @@ void test_buildTileUrl_truncates_instead_of_overflowing(void) {
 
 // --- bandForElevation ------------------------------------------------------------
 
-static const int16_t kBandFloors[] = {1, 200, 500, 1000, 1500, 2000, 3000};
+static const int16_t kBandFloors[] = {-100, 200, 500, 1000, 1500, 2000, 3000};
 static const int kBandCount =
     static_cast<int>(sizeof(kBandFloors) / sizeof(kBandFloors[0]));
 
-void test_band_water_below_first_floor(void) {
-  TEST_ASSERT_EQUAL_INT(-1, ct::bandForElevation(0, kBandFloors, kBandCount));
-  TEST_ASSERT_EQUAL_INT(-1, ct::bandForElevation(-10, kBandFloors, kBandCount));
+void test_band_negative_elevation_is_not_inherently_water(void) {
+  TEST_ASSERT_EQUAL_INT(0, ct::bandForElevation(-10, kBandFloors, kBandCount));
+}
+
+void test_explicit_land_mask_controls_painting(void) {
+  TEST_ASSERT_EQUAL_INT(0,
+                        ct::bandForSample(-4, true, kBandFloors, kBandCount));
+  TEST_ASSERT_EQUAL_INT(-1,
+                        ct::bandForSample(-4, false, kBandFloors, kBandCount));
+  TEST_ASSERT_EQUAL_INT(1,
+                        ct::bandForSample(250, true, kBandFloors, kBandCount));
+}
+
+void test_netherlands_mask_distinguishes_polder_and_water(void) {
+  bool land = false;
+  TEST_ASSERT_TRUE(core::land_water::classify(52.3508, 5.2647, &land));
+  TEST_ASSERT_TRUE_MESSAGE(land, "Almere must be classified as land");
+  TEST_ASSERT_TRUE(core::land_water::classify(52.5185, 5.4714, &land));
+  TEST_ASSERT_TRUE_MESSAGE(land, "Lelystad must be classified as land");
+  TEST_ASSERT_TRUE(core::land_water::classify(52.70, 5.40, &land));
+  TEST_ASSERT_FALSE_MESSAGE(land, "IJsselmeer must be classified as water");
+  TEST_ASSERT_TRUE(core::land_water::classify(52.50, 5.20, &land));
+  TEST_ASSERT_FALSE_MESSAGE(land, "Markermeer must be classified as water");
+}
+
+void test_mask_coverage_is_regional_and_view_sized(void) {
+  TEST_ASSERT_TRUE(core::land_water::coversView(52.3676, 4.9041, 198.0f));
+  TEST_ASSERT_FALSE(core::land_water::coversView(47.0753, 15.4062, 40.0f));
 }
 
 void test_band_lowest(void) {
-  TEST_ASSERT_EQUAL_INT(0, ct::bandForElevation(1, kBandFloors, kBandCount));
+  TEST_ASSERT_EQUAL_INT(0, ct::bandForElevation(-100, kBandFloors, kBandCount));
   TEST_ASSERT_EQUAL_INT(0, ct::bandForElevation(199, kBandFloors, kBandCount));
 }
 
@@ -578,7 +604,10 @@ int main(int, char**) {
   RUN_TEST(test_buildTileUrl_substitutes_z_x_y_in_order);
   RUN_TEST(test_buildTileUrl_truncates_instead_of_overflowing);
 
-  RUN_TEST(test_band_water_below_first_floor);
+  RUN_TEST(test_band_negative_elevation_is_not_inherently_water);
+  RUN_TEST(test_explicit_land_mask_controls_painting);
+  RUN_TEST(test_netherlands_mask_distinguishes_polder_and_water);
+  RUN_TEST(test_mask_coverage_is_regional_and_view_sized);
   RUN_TEST(test_band_lowest);
   RUN_TEST(test_band_boundary_lands_in_higher_band);
   RUN_TEST(test_band_top_is_open_ended);

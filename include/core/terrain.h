@@ -1,8 +1,8 @@
 #pragma once
 
 /**
- * Terrain elevation: sample an elevation grid around the radar centre from
- * terrain-RGB tiles and cache the one for the current view.
+ * Terrain background data: sample elevation tiles and pair them with an
+ * explicit generated land/water mask for the current view.
  *
  * The source is the AWS Open Data "Terrain Tiles" bucket (config::
  * kTerrainTileUrlFmt): one 256x256 PNG carries 65536 samples, so a view needs
@@ -12,6 +12,8 @@
  * the platform wires to a decoder that borrows the frame sprite's pixels for
  * workspace, because on the device there is no spare RAM to decode into.
  *
+ * A compact bit per grid sample keeps water classification independent from
+ * elevation: below-sea-level polders remain land and lakes remain water.
  * The grid itself keeps the radar's own flat-earth convention (1 deg ~ 111 km
  * on BOTH axes, exactly like core::geo), so a grid point projects onto the
  * screen position the overlay samples it for, distortion included. Row 0 is
@@ -28,6 +30,7 @@ namespace core::terrain {
 
 constexpr int kGridSize = config::kTerrainGridSize;
 constexpr int kGridPoints = kGridSize * kGridSize;
+constexpr int kLandMaskBytes = (kGridPoints + 7) / 8;
 
 /** Terrarium tiles are 256x256 px, the Web Mercator XYZ standard. */
 constexpr int kTilePx = 256;
@@ -45,6 +48,7 @@ struct Grid {
   double center_lon = 0.0;
   float half_span_km = 0.0f;         ///< centre to screen edge, km
   int16_t elev_m[kGridPoints] = {};  ///< row-major, row 0 = north edge
+  uint8_t land_mask[kLandMaskBytes] = {};  ///< one explicit land bit/sample
 };
 
 /** A Web Mercator XYZ tile. */
@@ -102,6 +106,9 @@ bool ensureGrid(double center_lat, double center_lon, uint8_t range_index,
 /** The cached grid if it belongs to this range preset, else nullptr. */
 const Grid* grid(uint8_t range_index);
 
+/** Explicit land classification for a grid sample. */
+bool isLand(const Grid& grid, int row, int col);
+
 // --- Pure helpers (exposed for unit testing) ---------------------------------
 
 /**
@@ -140,10 +147,14 @@ void buildTileUrl(char* buf, size_t len, const TileId& tile);
 
 /**
  * Band index for an elevation given ascending band floor altitudes:
- * -1 when elev_m < band_min_m[0] (water / sea level), else the highest i
+ * -1 when elev_m < band_min_m[0], else the highest i
  * with elev_m >= band_min_m[i].
  */
 int bandForElevation(int16_t elev_m, const int16_t* band_min_m,
                      int band_count);
+
+/** -1 for explicit water; otherwise the elevation band (negative is valid). */
+int bandForSample(int16_t elev_m, bool is_land, const int16_t* band_min_m,
+                  int band_count);
 
 }  // namespace core::terrain

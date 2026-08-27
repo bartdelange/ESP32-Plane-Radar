@@ -184,42 +184,39 @@ void initTagLabelMetrics() {
 }
 
 void initPalette() {
-  radar::kColorBackground = tft.color565(radar::kBgR, radar::kBgG, radar::kBgB);
-  radar::kColorGrid = tft.color565(radar::kGridR, radar::kGridG, radar::kGridB);
-  radar::kColorLabel = tft.color565(255, 255, 255);
-  radar::kColorCenter = tft.color565(255, 255, 255);
-  // GC9A01 BGR panel: swap R/B in color565 so logical red renders red on screen.
-  if (config::kDisplayRgbOrder) {
-    radar::kColorAircraft =
-        tft.color565(radar::kAircraftB, radar::kAircraftG, radar::kAircraftR);
-  } else {
-    radar::kColorAircraft =
-        tft.color565(radar::kAircraftR, radar::kAircraftG, radar::kAircraftB);
-  }
+  radar::kColorBackground =
+      displayColor565(radar::kBgR, radar::kBgG, radar::kBgB);
+  radar::kColorGrid =
+      displayColor565(radar::kGridR, radar::kGridG, radar::kGridB);
+  radar::kColorLabel = displayColor565(255, 255, 255);
+  radar::kColorCenter = displayColor565(255, 255, 255);
+  radar::kColorAircraft = displayColor565(radar::kAircraftR, radar::kAircraftG,
+                                           radar::kAircraftB);
   radar::kColorTrackVector =
-      tft.color565(radar::kTrackR, radar::kTrackG, radar::kTrackB);
+      displayColor565(radar::kTrackR, radar::kTrackG, radar::kTrackB);
   radar::kColorTagType =
-      tft.color565(radar::kTagTypeR, radar::kTagTypeG, radar::kTagTypeB);
+      displayColor565(radar::kTagTypeR, radar::kTagTypeG, radar::kTagTypeB);
   radar::kColorTagAltitude =
-      tft.color565(radar::kTagAltR, radar::kTagAltG, radar::kTagAltB);
+      displayColor565(radar::kTagAltR, radar::kTagAltG, radar::kTagAltB);
   radar::kColorTagRoute =
-      tft.color565(radar::kTagRouteR, radar::kTagRouteG, radar::kTagRouteB);
+      displayColor565(radar::kTagRouteR, radar::kTagRouteG, radar::kTagRouteB);
   radar::kColorVertClimb =
-      tft.color565(radar::kVertClimbR, radar::kVertClimbG, radar::kVertClimbB);
-  radar::kColorVertDescent = tft.color565(
+      displayColor565(radar::kVertClimbR, radar::kVertClimbG,
+                      radar::kVertClimbB);
+  radar::kColorVertDescent = displayColor565(
       radar::kVertDescentR, radar::kVertDescentG, radar::kVertDescentB);
   for (int i = 0; i < 4; ++i) {
     const int scale = i + 1;
-    radar::kColorTrackTrail[i] = tft.color565(
+    radar::kColorTrackTrail[i] = displayColor565(
         radar::kTrackR * scale / 5, radar::kTrackG * scale / 5,
         radar::kTrackB * scale / 5);
   }
   radar::kColorRunway =
-      tft.color565(radar::kRunwayR, radar::kRunwayG, radar::kRunwayB);
-  radar::kColorRunwayLabel = tft.color565(radar::kRunwayLabelR, radar::kRunwayLabelG,
-                                          radar::kRunwayLabelB);
+      displayColor565(radar::kRunwayR, radar::kRunwayG, radar::kRunwayB);
+  radar::kColorRunwayLabel = displayColor565(
+      radar::kRunwayLabelR, radar::kRunwayLabelG, radar::kRunwayLabelB);
   for (int i = 0; i < radar::kTerrainBandCount; ++i) {
-    radar::kColorTerrain[i] = tft.color565(
+    radar::kColorTerrain[i] = displayColor565(
         radar::kTerrainBandR[i], radar::kTerrainBandG[i], radar::kTerrainBandB[i]);
   }
 }

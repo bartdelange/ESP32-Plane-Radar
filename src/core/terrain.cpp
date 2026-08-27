@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "core/geo.h"
+#include "core/land_water.h"
 #include "core/settings.h"
 
 namespace core::terrain {
@@ -29,7 +30,7 @@ constexpr uint8_t kNoRange = 0xFF;
 /**
  * ONE cached grid — the view on screen — and not one per range preset.
  *
- * A slot is 3.4 KB, so four would be 13 KB of static RAM. That is not spare
+ * A slot is about 3.6 KB, so four would be over 14 KB of static RAM. That is not spare
  * change on an ESP32-C3: with the 115 KB frame sprite live the heap holds only
  * about 45 KB, and a TLS session needs ~30 KB of it, so those 13 KB decide
  * whether the ADS-B fetch can open a socket at all. Re-fetching after a range
@@ -228,6 +229,24 @@ void gateRetries(uint8_t range_index) {
   s_fail_range_index = range_index;
 }
 
+bool populateLandMask(Grid* grid, double center_lat, double center_lon,
+                      float half_span_km) {
+  memset(grid->land_mask, 0, sizeof(grid->land_mask));
+  for (int row = 0; row < kGridSize; ++row) {
+    for (int col = 0; col < kGridSize; ++col) {
+      double lat = 0.0, lon = 0.0;
+      pointLatLon(center_lat, center_lon, half_span_km, row, col, &lat, &lon);
+      bool land = false;
+      if (!core::land_water::classify(lat, lon, &land)) return false;
+      if (land) {
+        const int index = row * kGridSize + col;
+        grid->land_mask[index >> 3] |= 1u << (index & 7);
+      }
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 void setPollFn(platform::PollFn fn) { s_poll_fn = fn; }
@@ -254,6 +273,12 @@ const Grid* grid(uint8_t range_index) {
     return nullptr;
   }
   return &s_grid;
+}
+
+bool isLand(const Grid& grid, int row, int col) {
+  if (row < 0 || row >= kGridSize || col < 0 || col >= kGridSize) return false;
+  const int index = row * kGridSize + col;
+  return (grid.land_mask[index >> 3] & (1u << (index & 7))) != 0;
 }
 
 void pointLatLon(double center_lat, double center_lon, float half_span_km,
@@ -388,6 +413,14 @@ bool ensureGrid(double center_lat, double center_lon, uint8_t range_index,
       s_png_decode == nullptr) {
     return false;
   }
+  if (!core::land_water::coversView(center_lat, center_lon, half_span_km)) {
+    if (!gridReady(center_lat, center_lon, range_index)) {
+      s_grid.valid = false;
+      s_grid_range_index = kNoRange;
+      endDownload();
+    }
+    return false;
+  }
   if (s_fail_range_index == range_index &&
       platform::nowMs() - s_fail_ms < config::kTerrainRetryIntervalMs) {
     return false;
@@ -411,6 +444,11 @@ bool ensureGrid(double center_lat, double center_lon, uint8_t range_index,
     g.valid = false;
     s_grid_range_index = kNoRange;
     memset(g.elev_m, 0, sizeof(g.elev_m));
+    if (!populateLandMask(&g, center_lat, center_lon, half_span_km)) {
+      platform::logf("terrain: land mask does not cover this view\n");
+      endDownload();
+      return false;
+    }
     if (s_prog.tile_count == 0) {
       // Only a view outside the projection's latitude range gets here. Take the
       // retry gate so this is diagnosed once rather than every loop.
@@ -494,6 +532,11 @@ int bandForElevation(int16_t elev_m, const int16_t* band_min_m,
     }
   }
   return band;
+}
+
+int bandForSample(int16_t elev_m, bool is_land,
+                  const int16_t* band_min_m, int band_count) {
+  return is_land ? bandForElevation(elev_m, band_min_m, band_count) : -1;
 }
 
 }  // namespace core::terrain

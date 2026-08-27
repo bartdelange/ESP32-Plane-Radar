@@ -18,3 +18,5 @@
 extern LGFX tft;
 
 void displayInit();
+/** Convert a logical RGB colour for this destination's panel. */
+uint16_t displayColor565(uint8_t r, uint8_t g, uint8_t b);

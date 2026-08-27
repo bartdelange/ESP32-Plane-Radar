@@ -126,15 +126,14 @@ constexpr uint8_t kRunwayLabelB = 230;
 
 /**
  * Terrain background: hypsometric green bands, dark lowlands to lighter
- * highlands. Elevations below kTerrainBandMinM[0] keep the plain background
- * colour, which is also how water stays unpainted — the tiles carry ocean
- * bathymetry, so sea reads as negative elevation rather than as no data.
+ * highlands. The separate Natural Earth mask decides land versus water, so the
+ * lowest elevation band can safely include below-sea-level dry land.
  * Deliberately dimmer than the grid green so rings, runways and aircraft stay
  * legible on top.
  */
 constexpr int kTerrainBandCount = 7;
 /** Ascending band floors (metres AMSL). */
-constexpr int16_t kTerrainBandMinM[kTerrainBandCount] = {1,    200,  500, 1000,
+constexpr int16_t kTerrainBandMinM[kTerrainBandCount] = {-100, 200,  500, 1000,
                                                          1500, 2000, 3000};
 constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8,  12, 16, 22,
                                                       30, 40, 52};
