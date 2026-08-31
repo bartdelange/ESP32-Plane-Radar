@@ -12,7 +12,9 @@
 #include "core/adsb.h"
 #include "core/settings.h"
 #include "core/tap_gesture.h"
+#include "core/terrain.h"
 #include "core/track_history.h"
+#include "platform/png_decode.h"
 #include "platform/wifi_setup.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
@@ -26,6 +28,8 @@ bool g_radar_visible = false;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
+bool g_adsb_has_succeeded = false;
+bool g_terrain_download_active = false;
 
 void showRadarIfConnected() {
   if (!wifiIsConnected()) {
@@ -49,13 +53,16 @@ void scheduleAdsbFetchSoon() {
 }
 
 void onRangeChanged() {
+  core::terrain::clear();
   scheduleAdsbFetchSoon();
 }
 
 /** Fired by core::settings whenever lat()/lon() actually move. */
 void onCenterChanged() {
   core::adsb::clear();
+  core::terrain::clear();
   core::track::clear();
+  g_adsb_has_succeeded = false;
   g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
 }
 
@@ -119,6 +126,36 @@ void handleBootButton() {
  */
 void pollWifi() { wifiLoop(); }
 
+void maybeFetchTerrain() {
+  if (!g_adsb_has_succeeded || !g_radar_visible || !wifiIsConnected() ||
+      !ui::radar::showTerrain()) {
+    return;
+  }
+
+  // Never begin decorative work unless its complete timeout still fits before
+  // the next ADS-B cycle. ADS-B (including route enrichment) therefore always
+  // gets the first network slot, even when terrain is slow or unavailable.
+  constexpr unsigned long kAdsbGuardMs = 500;
+  const unsigned long since_adsb = pf::nowMs() - g_last_adsb_fetch_ms;
+  if (since_adsb + config::kTerrainRequestTimeoutMs + kAdsbGuardMs >=
+      config::kAdsbFetchIntervalMs) {
+    return;
+  }
+
+  const double lat = core::settings::lat();
+  const double lon = core::settings::lon();
+  const uint8_t range_idx = ui::radar::rangeIndex();
+  if (core::terrain::gridReady(lat, lon, range_idx)) return;
+
+  const bool ready = core::terrain::ensureGrid(
+      lat, lon, range_idx, ui::radar::terrainHalfSpanKm());
+  const bool active = core::terrain::downloadActive();
+  if (ready || (g_terrain_download_active && !active)) {
+    ui::radarDisplayDraw();
+  }
+  g_terrain_download_active = active;
+}
+
 void fetchAndDrawAircraft() {
   const float fetch_km = ui::radar::fetchRadiusKm();
   if (!core::adsb::fetchUpdate(core::settings::lat(), core::settings::lon(),
@@ -126,6 +163,7 @@ void fetchAndDrawAircraft() {
     handleBootButton();
     return;
   }
+  g_adsb_has_succeeded = true;
   ui::radarDisplayRefreshAircraft();
   handleBootButton();
 }
@@ -148,6 +186,8 @@ void setup() {
   core::settings::setCenterChangedFn(onCenterChanged);
   core::settings::setRangeChangedFn(onRangeChanged);
   core::adsb::setPollFn(pollWifi);
+  core::terrain::setPollFn(pollWifi);
+  core::terrain::setPngDecoder(platform_png::decode);
   if (wifiSetupConnect()) {
     showRadarIfConnected();
     // Fetch immediately after association instead of waiting one full period.
@@ -163,6 +203,7 @@ void loop() {
     if (g_radar_visible) {
       pf::logf("WiFi lost — will reconnect\n");
       g_radar_visible = false;
+      g_adsb_has_succeeded = false;
     }
 
     if (g_wifi_down_since == 0) {
@@ -189,6 +230,7 @@ void loop() {
       fetchAndDrawAircraft();
     }
     ui::radarDisplayTick();
+    maybeFetchTerrain();
   }
 
   pf::sleepMs(10);

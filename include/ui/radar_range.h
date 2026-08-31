@@ -31,6 +31,7 @@ inline uint8_t rangeIndex() { return core::settings::rangeIndex(); }
 
 inline bool useKm() { return core::settings::useKm(); }
 inline bool showRunways() { return core::settings::showRunways(); }
+inline bool showTerrain() { return core::settings::showTerrain(); }
 inline AirlineDisplay airlineDisplay() { return core::settings::airlineDisplay(); }
 
 inline void saveKmFromPortal(const char* v) {
@@ -38,6 +39,9 @@ inline void saveKmFromPortal(const char* v) {
 }
 inline void saveRunwaysFromPortal(const char* v) {
   core::settings::saveRunwaysFromPortal(v);
+}
+inline void saveTerrainFromPortal(const char* v) {
+  core::settings::saveTerrainFromPortal(v);
 }
 inline void saveAirlineDisplayFromPortal(const char* v) {
   core::settings::saveAirlineDisplayFromPortal(v);
@@ -64,6 +68,11 @@ inline float fetchRadiusKm() {
   const float screen_r_px =
       static_cast<float>(kCenterX - kBeyondRingScreenMarginPx);
   return outer_km * (screen_r_px / static_cast<float>(kGridOuterRadius));
+}
+
+inline float terrainHalfSpanKm() {
+  return rangeCurrent().outer_km *
+         (static_cast<float>(kCenterX) / static_cast<float>(kGridOuterRadius));
 }
 
 }  // namespace ui::radar

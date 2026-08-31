@@ -23,6 +23,8 @@ namespace core::portal
          Kind::kCheckbox, 2, true},
         {"show_runways", "Show airport runways", "type=\"checkbox\"",
          Kind::kCheckbox, 2, true},
+        {"show_terrain", "Show terrain", "type=\"checkbox\"",
+         Kind::kCheckbox, 2, true},
         {"airline_mode", "Airline labels", "", Kind::kSelect, 2, false},
         {"route_display", "Route display", "", Kind::kSelect, 2, false},
     };
@@ -98,6 +100,10 @@ namespace core::portal
       {
         on = settings::showRunways();
       }
+      else if (isField(field, "show_terrain"))
+      {
+        on = settings::showTerrain();
+      }
       snprintf(buf, len, "%s%s", field.html_attrs, on ? " checked" : "");
       return;
     }
@@ -133,6 +139,10 @@ namespace core::portal
     else if (isField(field, "show_runways"))
     {
       settings::saveRunwaysFromPortal(value);
+    }
+    else if (isField(field, "show_terrain"))
+    {
+      settings::saveTerrainFromPortal(value);
     }
     else if (isField(field, "airline_mode"))
     {

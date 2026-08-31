@@ -19,6 +19,7 @@
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
+#include "ui/terrain_overlay.h"
 
 namespace ui {
 namespace radar {
@@ -37,6 +38,7 @@ uint16_t kColorVertDescent = 0xFD20;
 uint16_t kColorTrackTrail[4] = {};
 uint16_t kColorRunway = 0x4D5F;
 uint16_t kColorRunwayLabel = 0x7DFF;
+uint16_t kColorTerrain[kTerrainBandCount] = {};
 
 }  // namespace radar
 
@@ -213,6 +215,10 @@ void initPalette() {
       displayColor565(radar::kRunwayR, radar::kRunwayG, radar::kRunwayB);
   radar::kColorRunwayLabel = displayColor565(
       radar::kRunwayLabelR, radar::kRunwayLabelG, radar::kRunwayLabelB);
+  for (int i = 0; i < radar::kTerrainBandCount; ++i) {
+    radar::kColorTerrain[i] = displayColor565(
+        radar::kTerrainBandR[i], radar::kTerrainBandG[i], radar::kTerrainBandB[i]);
+  }
 }
 
 /** Current view, rebuilt on demand from the live location and range preset. */
@@ -701,6 +707,7 @@ void drawStaticGrid(Gfx& gfx) {
   const int grid_r = radar::kGridOuterRadius;
 
   gfx.fillScreen(radar::kColorBackground);
+  terrain::drawTerrainBackground(gfx);
   drawRings(cx, cy, grid_r);
   drawCrosshairs(cx, cy, grid_r, radar::kColorGrid);
   initPalette();

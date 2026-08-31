@@ -9,7 +9,7 @@ Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (
 ## What it does
 
 1. **Wi‑Fi setup** (if needed) — captive portal on AP **`PlaneRadar-Setup`**
-2. **Radar** — live aircraft from [adsb.fi](https://opendata.adsb.fi/) on a sonar-style grid with airport/runway overlays
+2. **Radar** — live aircraft from [adsb.fi](https://opendata.adsb.fi/) on a sonar-style grid with airport/runway overlays and optional terrain relief
 
 After Wi‑Fi is saved, the device reconnects automatically; the radar runs in the main loop with periodic ADS-B updates (~3 s).
 
@@ -48,6 +48,7 @@ The portal only runs while setup is active. Normal radar mode does not keep a we
 | **Display distances in km** | Ring scale label in **km** by default; clear it to use **NM** (e.g. `40km` vs `22NM`) |
 | **Airline labels** | Hide airline labels, show the local friendly abbreviation, or show the full operator name (route data first, local table as fallback) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
+| **Show terrain** | Green elevation shading under the radar grid (default: on) |
 
 After a reset, the device reboots and shows the setup screen immediately (no “Connecting” loop on stale credentials).
 
@@ -103,11 +104,19 @@ development tool, not a product.
 
 ### Grid
 
-- Dark blue background with subdued green rings and crosshairs
+- Dark blue background (with optional green terrain shading), subdued green rings and crosshairs
 - White **N / S / E / W** at the bezel; range label on the **east** spoke (ring 3 = ¾ of outer radius)
 - White center dot
 
 Layout and colors: `include/ui/radar_theme.h`.
+
+### Terrain
+
+- Elevation comes from AWS Open Data Terrarium PNG tiles and is resampled into one 41×41 grid; changing range or location invalidates that single cache.
+- A generated 512×512 Natural Earth land/lake mask keeps reclaimed Flevoland classified as land while IJsselmeer and Markermeer remain water. Views outside the compiled regional mask use the normal background.
+- Terrain is decorative and defaults on. It starts only after a successful ADS-B cycle, fetches at most one tile in the safe time budget before the next cycle, and backs off for 60 seconds after transport, staging, allocation, or decode failure.
+- On ESP32-C3, each PNG is streamed to the existing SPIFFS partition using a 512-byte transfer buffer. TLS is then closed before the decoder temporarily allocates its 35.8 KiB workspace. The workspace and staging mount are released before later ADS-B or route requests. Neither the radar sprite nor its pixels are used as scratch.
+- The radar sprite remains lazily allocated. If its 115,200-byte RGB565 allocation fails after Wi-Fi, rendering continues through the direct-to-TFT fallback; terrain uses the same rendering path either way.
 
 ### Range presets
 
@@ -127,12 +136,12 @@ malformed saved data falls back to the defaults.
 
 - The compiled data pack contains a common worldwide-large-airport base plus medium and small airports for its selected region (currently `NL`) from OurAirports; all open runway strips in range (helipads excluded)
 - Teal runway lines with one ICAO label per airport (e.g. `KJFK`); toggle in the Wi‑Fi setup portal
-- Regenerate the airport data for the selected region: `python3 scripts/build_region_pack.py --region NL`
+- Regenerate the airport and Natural Earth land-mask data for the selected region: `python3 scripts/build_region_pack.py --region NL`
 
 The firmware compiles one pack at a time; there is no runtime region selector or
 downloader. Add or adjust maintained regions only in `scripts/regions.py`, then
-run the coordinator above. Region selection controls which medium and small
-airports supplement the worldwide large-airport base.
+run the coordinator above. Region selection controls both regional airport
+coverage and the land-mask bounds.
 
 ### Aircraft
 
@@ -164,6 +173,7 @@ Edit **`include/config.h`** for hardware and behavior:
 | Default location | `kDefaultRadarLat` / `kDefaultRadarLon` (overridden by the persisted Current Location) |
 | ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft`, `kVerticalRateDeadbandFpm` |
 | Routes/tracks | `kRouteLookupsPerCycle`, `kRouteCacheSize`, route TTLs, `kTrackHistoryDepth`, `kTrackHistoryMax`, `kTrackHistoryTtlMs`, `kTagCycleIntervalMs` |
+| Terrain | `kTerrainGridSize`, tile URL, request timeout, tile interval, retry interval |
 
 Default range presets and validation limits live in `include/core/settings.h`.
 
@@ -179,12 +189,14 @@ include/
     adsb.h, aircraft.h     — ADS-B fetch and decode
     route.h                — adsbdb route/operator cache and lookup
     track_history.h        — bounded portable aircraft track history
+    terrain.h              — optional elevation-grid fetch/cache
+    land_water.h           — generated regional land/water classification
     region_pack.h          — generated metadata for the selected compiled pack
     portal_params.h        — config-portal field table (one per destination)
     large_airports.h
   ui/                      — LovyanGFX drawing, shared by both destinations
     display.h, display_font.h, radar_theme.h, radar_range.h
-    radar_display.h, runway_overlay.h, status_screens.h
+    radar_display.h, runway_overlay.h, terrain_overlay.h, status_screens.h
   platform/
     wifi_setup.h           — radio + BOOT button seam
     device/                — pins.h, lgfx_config_device.hpp
@@ -195,6 +207,8 @@ scripts/
   regions.py                 — shared maintained-region definitions
   build_region_pack.py       — regenerate the selected airport pack
   build_large_airports.py
+  build_land_mask.py         — Natural Earth regional mask generator
+  gen_png_fixtures.py        — deterministic decoder fixture generator
 src/
   main.cpp                 — setup()/loop(), shared verbatim
   core/                    — settings, geo, adsb, portal_params, airport data
@@ -204,7 +218,7 @@ src/
     device/                — NVS, HTTPClient, WiFiManager, GC9A01, embedded font
     native/                — JSON settings, libcurl, SDL panel, keyboard BOOT,
                              simulated radio, localhost config portal
-test/                      — host unit tests (`make test`)
+test/                      — host, terrain-fetch and PNG decoder tests (`make test`)
 ```
 
 ## Wiring (GC9A01 ↔ ESP32-C3 Super Mini)
@@ -266,9 +280,10 @@ make debug-device-test  # on-device GDB, halt at setup()
 make debug-device-run   # on-device GDB, board runs
 make native             # emulator run
 make test               # all host unit tests
+make test-live          # opt-in live AWS terrain smoke test
 ```
 
-- PlatformIO envs: **`supermini`** (release), **`supermini_debug`** (`-Og -g`, on-device GDB), and **`native`** / **`native_test`** (host)
+- PlatformIO envs: **`supermini`** (release), **`supermini_debug`** (`-Og -g`, on-device GDB), and **`native`** / **`native_test`** / **`native_test_fetch`** / **`native_test_png`** / **`native_test_live`** (host)
 - Serial: **115200** baud
 - USB CDC on boot enabled in `platformio.ini` for the Super Mini
 

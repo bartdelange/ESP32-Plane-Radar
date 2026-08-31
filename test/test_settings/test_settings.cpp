@@ -25,6 +25,7 @@ void test_fresh_store_uses_the_default_current_location(void) {
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLat, cs::lat());
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLon, cs::lon());
   TEST_ASSERT_TRUE(cs::useKm());
+  TEST_ASSERT_TRUE(cs::showTerrain());
 }
 
 void test_current_location_is_persisted_and_validated(void) {
@@ -37,14 +38,11 @@ void test_current_location_is_persisted_and_validated(void) {
 
 // --- portalCheckboxChecked ---------------------------------------------------
 
-void test_checkbox_single_TF_means_submitted(void) {
-  // WiFiManager submits the value= attribute, which the portal prefills with
-  // "T" regardless of state; the browser only sends the field at all when the
-  // box is ticked. So a bare T or F both mean "checked".
+void test_checkbox_accepts_explicit_true_values(void) {
   TEST_ASSERT_TRUE(cs::portalCheckboxChecked("T"));
   TEST_ASSERT_TRUE(cs::portalCheckboxChecked("t"));
-  TEST_ASSERT_TRUE(cs::portalCheckboxChecked("F"));
-  TEST_ASSERT_TRUE(cs::portalCheckboxChecked("f"));
+  TEST_ASSERT_TRUE(cs::portalCheckboxChecked("1"));
+  TEST_ASSERT_TRUE(cs::portalCheckboxChecked("true"));
 }
 
 void test_checkbox_accepts_conventional_on(void) {
@@ -55,8 +53,9 @@ void test_checkbox_rejects_absent_and_unknown(void) {
   TEST_ASSERT_FALSE(cs::portalCheckboxChecked(nullptr));
   TEST_ASSERT_FALSE(cs::portalCheckboxChecked(""));
   TEST_ASSERT_FALSE(cs::portalCheckboxChecked("TT"));
+  TEST_ASSERT_FALSE(cs::portalCheckboxChecked("F"));
+  TEST_ASSERT_FALSE(cs::portalCheckboxChecked("f"));
   TEST_ASSERT_FALSE(cs::portalCheckboxChecked("off"));
-  TEST_ASSERT_FALSE(cs::portalCheckboxChecked("true"));
 }
 
 // --- formatRing3Label --------------------------------------------------------
@@ -177,6 +176,7 @@ void test_unitsReset_leaves_range_alone(void) {
   // keeps the user's chosen zoom.
   cs::saveKmFromPortal(nullptr);
   cs::saveRunwaysFromPortal(nullptr);
+  cs::saveTerrainFromPortal(nullptr);
   cs::rangeNext();
   const uint8_t range_before = cs::rangeIndex();
 
@@ -184,6 +184,7 @@ void test_unitsReset_leaves_range_alone(void) {
 
   TEST_ASSERT_TRUE(cs::useKm());
   TEST_ASSERT_TRUE(cs::showRunways());
+  TEST_ASSERT_TRUE(cs::showTerrain());
   TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kNone),
                           static_cast<uint8_t>(cs::airlineDisplay()));
   TEST_ASSERT_EQUAL_UINT8(range_before, cs::rangeIndex());
@@ -229,7 +230,7 @@ int main(int, char**) {
   RUN_TEST(test_fresh_store_uses_the_default_current_location);
   RUN_TEST(test_current_location_is_persisted_and_validated);
 
-  RUN_TEST(test_checkbox_single_TF_means_submitted);
+  RUN_TEST(test_checkbox_accepts_explicit_true_values);
   RUN_TEST(test_checkbox_accepts_conventional_on);
   RUN_TEST(test_checkbox_rejects_absent_and_unknown);
 

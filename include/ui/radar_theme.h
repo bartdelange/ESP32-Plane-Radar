@@ -124,6 +124,14 @@ constexpr uint8_t kRunwayLabelR = 110;
 constexpr uint8_t kRunwayLabelG = 210;
 constexpr uint8_t kRunwayLabelB = 230;
 
+constexpr int kTerrainBandCount = 7;
+constexpr int16_t kTerrainBandMinM[kTerrainBandCount] = {-100, 200, 500, 1000,
+                                                         1500, 2000, 3000};
+constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8, 12, 16, 22, 30, 40, 52};
+constexpr uint8_t kTerrainBandG[kTerrainBandCount] = {34, 46, 60, 74, 88, 104,
+                                                      122};
+constexpr uint8_t kTerrainBandB[kTerrainBandCount] = {18, 22, 26, 30, 36, 44, 54};
+
 extern uint16_t kColorBackground;
 extern uint16_t kColorGrid;
 extern uint16_t kColorLabel;
@@ -138,5 +146,6 @@ extern uint16_t kColorVertDescent;
 extern uint16_t kColorTrackTrail[4];
 extern uint16_t kColorRunway;
 extern uint16_t kColorRunwayLabel;
+extern uint16_t kColorTerrain[kTerrainBandCount];
 
 }  // namespace ui::radar
