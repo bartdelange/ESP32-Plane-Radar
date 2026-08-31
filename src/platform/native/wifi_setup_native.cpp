@@ -50,6 +50,7 @@ constexpr unsigned long kConnectAnimationMs = 2000;
 
 bool s_link_up = false;
 bool s_force_config_portal = false;
+bool s_lan_portal_enabled = false;
 
 std::string storedSsid() {
   return pf::KeyValueStore::getString(kWifiKvNamespace, kWifiKvSsidKey, "");
@@ -177,18 +178,36 @@ bool wifiReconnect() {
   return true;
 }
 
-bool wifiOpenConfigPortal() {
+bool wifiToggleLanWebPortal() {
   bootButtonInit();
-  pf::logf("Opening configuration portal\n");
-  statusScreenPortal();
-  runPortalUntilCredentials();
-  pf::logf("Configuration saved — restarting radar\n");
-  pf::sleepMs(250);
-  pf::reboot();
+  if (!s_link_up) {
+    pf::logf("Configuration server unavailable: WiFi is disconnected\n");
+    return false;
+  }
+  if (s_lan_portal_enabled) {
+    portalServerStop();
+    s_lan_portal_enabled = false;
+    pf::logf("Configuration server disabled\n");
+    return true;
+  }
+  s_lan_portal_enabled = portalServerStart();
+  if (s_lan_portal_enabled) {
+    pf::logf("Configuration server enabled: http://127.0.0.1:8080/\n");
+  }
+  return s_lan_portal_enabled;
 }
 
 void wifiLoop() {
-  // As on device, normal radar mode has no portal server to service. A long
-  // hold remains live with or without a network connection.
   bootButtonPollLongPress();
+  if (!s_link_up) {
+    portalServerStop();
+    s_lan_portal_enabled = false;
+    return;
+  }
+  if (!s_lan_portal_enabled) return;
+  portalServerPump();
+  std::string ssid;
+  if (portalServerConsumeCredentials(&ssid)) {
+    pf::logf("Configuration saved\n");
+  }
 }

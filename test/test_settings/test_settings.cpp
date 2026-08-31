@@ -25,7 +25,6 @@ void test_fresh_store_uses_the_default_current_location(void) {
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLat, cs::lat());
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLon, cs::lon());
   TEST_ASSERT_TRUE(cs::useKm());
-  TEST_ASSERT_TRUE(cs::showTerrain());
 }
 
 void test_current_location_is_persisted_and_validated(void) {
@@ -62,7 +61,7 @@ void test_checkbox_rejects_absent_and_unknown(void) {
 
 void test_format_nm_is_exact(void) {
   char buf[12];
-  const char* expected[] = {"5NM", "11NM", "22NM", "43NM", "65NM"};
+  const char* expected[] = {"5NM", "8NM", "11NM", "22NM", "43NM", "65NM"};
   for (size_t i = 0; i < cs::rangeCount(); ++i) {
     cs::formatRing3Label(buf, sizeof(buf), cs::rangePreset(i).ring3_km,
                          /*use_km=*/false);
@@ -72,7 +71,7 @@ void test_format_nm_is_exact(void) {
 
 void test_format_km_when_toggled(void) {
   char buf[12];
-  const char* expected[] = {"10km", "20km", "40km", "80km", "120km"};
+  const char* expected[] = {"10km", "15km", "20km", "40km", "80km", "120km"};
   for (size_t i = 0; i < cs::rangeCount(); ++i) {
     cs::formatRing3Label(buf, sizeof(buf), cs::rangePreset(i).ring3_km,
                          /*use_km=*/true);
@@ -90,9 +89,9 @@ void test_outer_km_is_ring3_over_three_quarters(void) {
 }
 
 void test_default_presets_are_metric_fork_defaults(void) {
-  const uint16_t expected[] = {10, 20, 40, 80, 120};
-  TEST_ASSERT_EQUAL_UINT(5, cs::rangeCount());
-  for (size_t i = 0; i < 5; ++i) {
+  const uint16_t expected[] = {10, 15, 20, 40, 80, 120};
+  TEST_ASSERT_EQUAL_UINT(6, cs::rangeCount());
+  for (size_t i = 0; i < 6; ++i) {
     TEST_ASSERT_EQUAL_UINT16(expected[i], cs::rangePreset(i).ring3_km);
   }
 }
@@ -120,13 +119,13 @@ void test_range_parser_rejects_malformed_lists(void) {
 }
 
 void test_configured_presets_persist_with_active_range(void) {
-  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("15,30,60"));
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("5,30,60"));
   cs::rangeNext();
   TEST_ASSERT_EQUAL_UINT16(60, cs::rangeCurrent().ring3_km);
   cs::init();
   TEST_ASSERT_EQUAL_UINT(3, cs::rangeCount());
   TEST_ASSERT_EQUAL_UINT16(60, cs::rangeCurrent().ring3_km);
-  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,20,40,80,120"));
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,15,20,40,80,120"));
 }
 
 void test_invalid_persisted_ranges_fall_back_to_defaults(void) {
@@ -136,7 +135,7 @@ void test_invalid_persisted_ranges_fall_back_to_defaults(void) {
   cs::init();
   TEST_ASSERT_EQUAL_UINT(cs::kDefaultRangeCount, cs::rangeCount());
   TEST_ASSERT_EQUAL_UINT8(1, cs::rangeIndex());
-  TEST_ASSERT_EQUAL_UINT16(20, cs::rangeCurrent().ring3_km);
+  TEST_ASSERT_EQUAL_UINT16(15, cs::rangeCurrent().ring3_km);
   core::platform::KeyValueStore::remove(cs::kNsRadar, "rangePresets");
   core::platform::KeyValueStore::remove(cs::kNsRadar, "rangeIdx");
   cs::init();
@@ -146,7 +145,7 @@ void test_list_change_uses_first_range_not_smaller_than_old_value(void) {
   while (cs::rangeCurrent().ring3_km != 40) cs::rangeNext();
   TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,30,50"));
   TEST_ASSERT_EQUAL_UINT16(50, cs::rangeCurrent().ring3_km);
-  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,20,40,80,120"));
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,15,20,40,80,120"));
 }
 
 void test_range_configuration_does_not_move_current_location(void) {
@@ -155,7 +154,7 @@ void test_range_configuration_does_not_move_current_location(void) {
   TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,25,100"));
   TEST_ASSERT_DOUBLE_WITHIN(1e-9, old_lat, cs::lat());
   TEST_ASSERT_DOUBLE_WITHIN(1e-9, old_lon, cs::lon());
-  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,20,40,80,120"));
+  TEST_ASSERT_TRUE(cs::saveRangePresetsFromPortal("10,15,20,40,80,120"));
 }
 
 void test_rangeNext_cycles_and_wraps(void) {
@@ -176,7 +175,6 @@ void test_unitsReset_leaves_range_alone(void) {
   // keeps the user's chosen zoom.
   cs::saveKmFromPortal(nullptr);
   cs::saveRunwaysFromPortal(nullptr);
-  cs::saveTerrainFromPortal(nullptr);
   cs::rangeNext();
   const uint8_t range_before = cs::rangeIndex();
 
@@ -184,7 +182,6 @@ void test_unitsReset_leaves_range_alone(void) {
 
   TEST_ASSERT_TRUE(cs::useKm());
   TEST_ASSERT_TRUE(cs::showRunways());
-  TEST_ASSERT_TRUE(cs::showTerrain());
   TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kNone),
                           static_cast<uint8_t>(cs::airlineDisplay()));
   TEST_ASSERT_EQUAL_UINT8(range_before, cs::rangeIndex());

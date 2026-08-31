@@ -16,6 +16,14 @@ void test_route_setting_controls_content_and_height(void) {
   TEST_ASSERT_EQUAL_INT(39, core::tag_content::blockHeight(13, 3));
 }
 
+void test_compact_mode_starts_with_seventh_inside_ring_tag(void) {
+  TEST_ASSERT_FALSE(core::tag_content::useCompactMode(1));
+  TEST_ASSERT_FALSE(core::tag_content::useCompactMode(6));
+  TEST_ASSERT_TRUE(core::tag_content::useCompactMode(7));
+  TEST_ASSERT_TRUE(core::tag_content::showAltitudeLine("^ 12000"));
+  TEST_ASSERT_FALSE(core::tag_content::showAltitudeLine(""));
+}
+
 void test_independent_tags_are_visible_without_highlights(void) {
   const collision::Bounds bounds[] = {{0, 0, 20, 20, true},
                                       {100, 100, 120, 120, true}};
@@ -79,6 +87,7 @@ void tearDown(void) {}
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_route_setting_controls_content_and_height);
+  RUN_TEST(test_compact_mode_starts_with_seventh_inside_ring_tag);
   RUN_TEST(test_independent_tags_are_visible_without_highlights);
   RUN_TEST(test_collision_selection_and_highlight_share_one_owner);
   RUN_TEST(test_collision_ending_removes_highlight);

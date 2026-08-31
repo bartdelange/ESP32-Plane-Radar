@@ -75,19 +75,6 @@ constexpr int kBeyondRingScreenMarginPx = 2;
 /** Target cap height (px) for aircraft tags (bold, slightly above scale label). */
 constexpr int kAircraftTagLabelHeightPx = 13;
 
-/**
- * Above this many tagged aircraft, tags collapse to the callsign alone.
- *
- * A full tag is three lines (callsign / type / altitude). On a 240 px disc that
- * is fine for a handful of aircraft and unreadable mush once the sky is busy —
- * and the callsign is the line you actually read. Dropping to one line trades
- * detail for legibility exactly when legibility is what is scarce.
- *
- * Counts only aircraft drawn inside the outer ring. Traffic beyond it renders
- * as a bare rim dot with no tag, so it cannot contribute to tag clutter.
- */
-constexpr int kTagCompactAboveCount = 4;
-
 /** RGB565 palette targets (applied in initPalette). */
 constexpr uint8_t kBgR = 4;
 constexpr uint8_t kBgG = 10;
@@ -124,14 +111,6 @@ constexpr uint8_t kRunwayLabelR = 110;
 constexpr uint8_t kRunwayLabelG = 210;
 constexpr uint8_t kRunwayLabelB = 230;
 
-constexpr int kTerrainBandCount = 7;
-constexpr int16_t kTerrainBandMinM[kTerrainBandCount] = {-100, 200, 500, 1000,
-                                                         1500, 2000, 3000};
-constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8, 12, 16, 22, 30, 40, 52};
-constexpr uint8_t kTerrainBandG[kTerrainBandCount] = {34, 46, 60, 74, 88, 104,
-                                                      122};
-constexpr uint8_t kTerrainBandB[kTerrainBandCount] = {18, 22, 26, 30, 36, 44, 54};
-
 extern uint16_t kColorBackground;
 extern uint16_t kColorGrid;
 extern uint16_t kColorLabel;
@@ -146,6 +125,5 @@ extern uint16_t kColorVertDescent;
 extern uint16_t kColorTrackTrail[4];
 extern uint16_t kColorRunway;
 extern uint16_t kColorRunwayLabel;
-extern uint16_t kColorTerrain[kTerrainBandCount];
 
 }  // namespace ui::radar

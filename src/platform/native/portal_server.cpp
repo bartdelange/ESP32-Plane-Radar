@@ -11,10 +11,9 @@
  *  - Loopback only. Bound to 127.0.0.1 and never INADDR_ANY: this is a
  *    hand-rolled parser reachable from a browser, and it has no business being
  *    on the LAN of whoever is doing UI work in a cafe.
- *  - Single-threaded and non-blocking. It is pumped only by the blocking setup
- *    flow, on the same thread as the SDL panel. Reads and writes are bounded by
- *    poll() budgets and each connection is closed after one response (no
- *    keep-alive), so a browser holding a connection open cannot starve it.
+ *  - Single-threaded and non-blocking. It is pumped by the blocking setup flow
+ *    and by wifiLoop() during normal operation. Reads and writes are bounded by
+ *    poll() budgets and each connection is closed after one response.
  *  - The form carries one field the table does not: the Wi-Fi SSID. The table
  *    deliberately omits it because on the device WiFiManager collects
  *    credentials itself; here nothing else would.
@@ -76,13 +75,17 @@ namespace
   }
 
   /**
-   * macOS has no MSG_NOSIGNAL, so a client that closes the tab mid-response would
-   * take the whole harness down with SIGPIPE. Disable the signal per socket.
+   * BSD/macOS suppress SIGPIPE per socket. Linux instead supplies MSG_NOSIGNAL
+   * to each send in writeAll(), keeping the protection local on both platforms.
    */
   void suppressSigpipe(int fd)
   {
+#ifdef SO_NOSIGPIPE
     const int on = 1;
     ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof(on));
+#else
+    (void)fd;
+#endif
   }
 
   /** Bounded non-blocking write of the whole buffer. Best effort. */
@@ -91,7 +94,13 @@ namespace
     size_t sent = 0;
     for (int i = 0; i < kMaxIoPolls && sent < data.size(); ++i)
     {
-      const ssize_t n = ::send(fd, data.data() + sent, data.size() - sent, 0);
+#ifdef MSG_NOSIGNAL
+      constexpr int kSendFlags = MSG_NOSIGNAL;
+#else
+      constexpr int kSendFlags = 0;
+#endif
+      const ssize_t n =
+          ::send(fd, data.data() + sent, data.size() - sent, kSendFlags);
       if (n > 0)
       {
         sent += static_cast<size_t>(n);
@@ -655,7 +664,7 @@ bool portalServerStart()
   }
 
   s_listen_fd = fd;
-  pf::logf("Setup portal: http://%s:%u\n", kBindAddr,
+  pf::logf("Configuration portal: http://%s:%u\n", kBindAddr,
            static_cast<unsigned>(kBindPort));
   return true;
 }

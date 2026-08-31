@@ -70,9 +70,14 @@ constexpr char kPrefsForcePortalKey[] = "portal";
 bool s_force_config_portal = false;
 WiFiManager s_wm;
 bool s_wm_configured = false;
+bool s_portal_save_pending = false;
+#ifdef WM_MDNS
+bool s_mdns_active = false;
+#endif
 
 void ensureWifiManager();
 void stopLanWebPortal();
+bool startLanWebPortal();
 bool wifiLinkUp();
 
 /**
@@ -151,6 +156,7 @@ void onPortalParamsSaved() {
     core::settings::saveRouteDisplayFromPortal(
         s_wm.server->arg("route_display").c_str());
   }
+  s_portal_save_pending = true;
 }
 
 void attachPortalParams(WiFiManager& wm) {
@@ -258,7 +264,12 @@ void onConfigPortalApStarted(WiFiManager*) {
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
   statusScreenPortal();
 #ifdef WM_MDNS
+  if (s_mdns_active) {
+    MDNS.end();
+    s_mdns_active = false;
+  }
   if (MDNS.begin(config::kPortalHostname)) {
+    s_mdns_active = true;
     MDNS.addService("http", "tcp", 80);
     Serial.printf("Setup portal: http://%s.local (or http://%s)\n",
                   config::kPortalHostname, config::kPortalIp);
@@ -289,13 +300,28 @@ void ensureWifiManager() {
 }
 
 void stopLanWebPortal() {
-  if (!s_wm_configured || !s_wm.getWebPortalActive()) {
-    return;
-  }
-  s_wm.stopWebPortal();
+  if (s_wm_configured && s_wm.getWebPortalActive()) s_wm.stopWebPortal();
 #ifdef WM_MDNS
-  MDNS.end();
+  if (s_mdns_active) {
+    MDNS.end();
+    s_mdns_active = false;
+  }
 #endif
+}
+
+bool startLanWebPortal() {
+  if (!wifiLinkUp()) return false;
+  ensureWifiManager();
+  refreshPortalParamDefaults();
+  if (!s_wm.getWebPortalActive()) s_wm.startWebPortal();
+  if (!s_wm.getWebPortalActive()) return false;
+#ifdef WM_MDNS
+  if (!s_mdns_active && MDNS.begin(config::kPortalHostname)) {
+    s_mdns_active = true;
+    MDNS.addService("http", "tcp", 80);
+  }
+#endif
+  return true;
 }
 
 void prepareSta() {
@@ -364,10 +390,8 @@ bool connectSavedNetwork(bool show_ui) {
     return false;
   }
 
-  // WiFi.begin() with no arguments uses the credentials already persisted by
-  // the ESP-IDF driver. Keeping this path independent of WiFiManager is
-  // deliberate: its WebServer, parameters and mDNS consume the contiguous
-  // heap that the first TLS handshake needs.
+  // WiFi.begin() with no arguments uses credentials persisted by ESP-IDF. The
+  // runtime web portal remains unallocated until an explicit double press.
   const String ssid(reinterpret_cast<const char*>(conf.sta.ssid));
   if (wifiLinkUp()) {
     return true;
@@ -400,11 +424,13 @@ bool openConfigPortal() {
   delay(50);
   statusScreenPortal();
   refreshPortalParamDefaults();
+  s_portal_save_pending = false;
   s_wm.setConfigPortalBlocking(false);
   s_wm.startConfigPortal(config::kPortalApName);
   while (s_wm.getConfigPortalActive()) {
     bootButtonPollLongPress();
-    if (s_wm.process()) {
+    s_wm.process();
+    if (s_portal_save_pending) {
       // WiFiManager and its WebServer own long-lived allocations. Credentials
       // and radar settings have been persisted by this point, so reboot into
       // the lean saved-network path instead of carrying portal heap into TLS.
@@ -415,7 +441,10 @@ bool openConfigPortal() {
     delay(10);
   }
 #ifdef WM_MDNS
-  MDNS.end();
+  if (s_mdns_active) {
+    MDNS.end();
+    s_mdns_active = false;
+  }
 #endif
   return wifiLinkUp();
 }
@@ -477,10 +506,25 @@ bool wifiReconnect() {
   return connectSavedNetwork(true);
 }
 
-bool wifiOpenConfigPortal() {
+bool wifiToggleLanWebPortal() {
   initBootButton();
-  Serial.println("Opening configuration portal");
-  return openConfigPortal();
+  if (!wifiLinkUp()) {
+    Serial.println("Configuration server unavailable: WiFi is disconnected");
+    return false;
+  }
+  if (s_wm_configured && s_wm.getWebPortalActive()) {
+    stopLanWebPortal();
+    Serial.println("Configuration server disabled");
+    return true;
+  }
+  s_portal_save_pending = false;
+  if (!startLanWebPortal()) {
+    Serial.println("Configuration server failed to start");
+    return false;
+  }
+  Serial.printf("Configuration server enabled: http://%s/\n",
+                WiFi.localIP().toString().c_str());
+  return true;
 }
 
 void wifiLoop() {
@@ -489,6 +533,20 @@ void wifiLoop() {
   // win over a slow request. This call may not return (hold -> reset ->
   // restart), which is why nothing below it is required for correctness.
   bootButtonPollLongPress();
+  if (!wifiLinkUp()) {
+    stopLanWebPortal();
+    return;
+  }
+  if (!s_wm_configured || !s_wm.getWebPortalActive()) return;
+  s_wm.process();
+  if (!s_wm.getWebPortalActive()) {
+    stopLanWebPortal();
+    return;
+  }
+  if (s_portal_save_pending) {
+    s_portal_save_pending = false;
+    Serial.println("Configuration saved");
+  }
 }
 
 bool wifiSetupConnect() {

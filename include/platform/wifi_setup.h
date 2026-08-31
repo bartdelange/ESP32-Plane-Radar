@@ -17,9 +17,9 @@ void wifiResetCredentialsAndReboot();
 bool wifiSetupConnect();
 /** Reconnect using saved creds; never opens the captive portal. */
 bool wifiReconnect();
-/** Open the on-demand config portal without erasing saved Wi-Fi credentials. */
-bool wifiOpenConfigPortal();
-/** Poll BOOT long-press handling; call every loop() iteration. */
+/** Toggle the on-demand STA-only settings server; never starts an AP. */
+bool wifiToggleLanWebPortal();
+/** Poll BOOT and service the LAN settings server only while explicitly active. */
 void wifiLoop();
 bool wifiBootButtonPressed();
 /** GPIO + interrupt setup; call once early in setup(). */

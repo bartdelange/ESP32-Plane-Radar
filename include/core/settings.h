@@ -40,7 +40,7 @@ constexpr float kRing3ToOuterKm = 4.0f / 3.0f;
 constexpr float kKmPerNauticalMile = 1.852f;
 constexpr size_t kMaxRangePresets = 8;
 constexpr uint16_t kMaxRangeKm = 500;
-constexpr uint16_t kDefaultRangeKm[] = {10, 20, 40, 80, 120};
+constexpr uint16_t kDefaultRangeKm[] = {10, 15, 20, 40, 80, 120};
 constexpr size_t kDefaultRangeCount =
     sizeof(kDefaultRangeKm) / sizeof(kDefaultRangeKm[0]);
 
@@ -103,14 +103,12 @@ void formatRangePresets(char* buf, size_t len);
 /** True (the default) means kilometres; false means nautical miles. */
 bool useKm();
 bool showRunways();
-bool showTerrain();
 bool showRoutes();
 AirlineDisplay airlineDisplay();
 
 /** Apply a WiFi portal checkbox value and persist it. */
 void saveKmFromPortal(const char* checkbox_value);
 void saveRunwaysFromPortal(const char* checkbox_value);
-void saveTerrainFromPortal(const char* checkbox_value);
 /** Apply the portal selector: 0 off, 1 on. */
 void saveRouteDisplayFromPortal(const char* select_value);
 /** Apply the portal selector: 0 none, 1 full name, 2 friendly abbreviation. */
@@ -121,7 +119,7 @@ void saveAirlineDisplayFromPortal(const char* select_value);
  *
  * Note the asymmetry with clearLocation(), which resets the current location:
  * this deliberately does NOT reset the range preset. A Wi-Fi credential wipe
- * returns the display to km with runways, terrain and routes on, but leaves
+ * returns the display to km with runways and routes on, but leaves
  * the user's chosen zoom alone.
  */
 void unitsReset();

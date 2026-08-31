@@ -19,7 +19,6 @@
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
-#include "ui/terrain_overlay.h"
 
 namespace ui {
 namespace radar {
@@ -38,7 +37,6 @@ uint16_t kColorVertDescent = 0xFD20;
 uint16_t kColorTrackTrail[4] = {};
 uint16_t kColorRunway = 0x4D5F;
 uint16_t kColorRunwayLabel = 0x7DFF;
-uint16_t kColorTerrain[kTerrainBandCount] = {};
 
 }  // namespace radar
 
@@ -215,10 +213,6 @@ void initPalette() {
       displayColor565(radar::kRunwayR, radar::kRunwayG, radar::kRunwayB);
   radar::kColorRunwayLabel = displayColor565(
       radar::kRunwayLabelR, radar::kRunwayLabelG, radar::kRunwayLabelB);
-  for (int i = 0; i < radar::kTerrainBandCount; ++i) {
-    radar::kColorTerrain[i] = displayColor565(
-        radar::kTerrainBandR[i], radar::kTerrainBandG[i], radar::kTerrainBandB[i]);
-  }
 }
 
 /** Current view, rebuilt on demand from the live location and range preset. */
@@ -374,7 +368,7 @@ void buildAircraftTag(int x, int y, const core::adsb::Aircraft& plane,
   }
   if (!compact && plane.type[0] != '\0')
     tag.lines[tag.line_count++] = {plane.type, radar::kColorTagType};
-  if (!compact && plane.alt[0] != '\0') {
+  if (core::tag_content::showAltitudeLine(plane.alt)) {
     const auto direction = core::adsb::verticalDirection(plane.vertical_rate_fpm);
     const char* marker = direction == core::adsb::VerticalDirection::kClimb
                              ? "^ "
@@ -573,8 +567,7 @@ void drawAircraft() {
   // outer ring are drawn as bare rim dots with no tag at all, so counting them
   // would collapse a handful of readable tags because of traffic that is not
   // even on the disc.
-  const bool compact =
-      static_cast<int>(draw_count) > radar::kTagCompactAboveCount;
+  const bool compact = core::tag_content::useCompactMode(draw_count);
 
   static TagLayout tags[core::adsb::kMaxAircraft];
   core::tag_collision::Bounds bounds[core::adsb::kMaxAircraft];
@@ -707,7 +700,6 @@ void drawStaticGrid(Gfx& gfx) {
   const int grid_r = radar::kGridOuterRadius;
 
   gfx.fillScreen(radar::kColorBackground);
-  terrain::drawTerrainBackground(gfx);
   drawRings(cx, cy, grid_r);
   drawCrosshairs(cx, cy, grid_r, radar::kColorGrid);
   initPalette();
