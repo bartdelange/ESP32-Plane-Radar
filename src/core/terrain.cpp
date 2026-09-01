@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "core/geo.h"
@@ -44,6 +45,21 @@ struct PersistedGrid {
 };
 #pragma pack(pop)
 
+// At 61x61 this record is about 8 KiB, larger than the ESP32-C3 loopTask can
+// safely spare. Persistence code must acquire it from the heap briefly and
+// release it before terrain HTTP/TLS/PNG work; never declare one as a local.
+static_assert(sizeof(PersistedGrid) > 4096,
+              "PersistedGrid must not be allocated on a task stack");
+
+PersistedGrid* allocatePersistenceScratch() {
+  PersistedGrid* record =
+      static_cast<PersistedGrid*>(std::calloc(1, sizeof(PersistedGrid)));
+  if (record == nullptr) {
+    platform::logf("terrain: persistence scratch allocation failed\n");
+  }
+  return record;
+}
+
 uint32_t checksum(const PersistedGrid& record) {
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&record);
   const size_t len = offsetof(PersistedGrid, checksum);
@@ -57,9 +73,9 @@ uint32_t checksum(const PersistedGrid& record) {
 /**
  * ONE cached grid — the view on screen — and not one per range preset.
  *
- * A slot is about 3.6 KB, so four would be over 14 KB of static RAM. That is not
- * spare change on an ESP32-C3: ADS-B TLS has priority over this decorative
- * cache. Re-fetching after a range change is the cheaper price.
+ * A 61x61 slot is about 8 KB, so four would be over 30 KB of static RAM. That
+ * is not spare change on an ESP32-C3: ADS-B TLS has priority over this
+ * decorative cache. Re-fetching after a range change is the cheaper price.
  */
 Grid s_grid;
 uint8_t s_grid_range_index = kNoRange;
@@ -297,22 +313,28 @@ bool gridReady(double center_lat, double center_lon, uint8_t range_index) {
 
 bool loadPersistedGrid(double center_lat, double center_lon,
                        uint8_t range_index, float half_span_km) {
-  PersistedGrid record = {};
-  if (!platform::TerrainCacheStore::load(&record, sizeof(record)) ||
-      record.magic != kCacheMagic ||
-      record.version != kCacheFormatVersion ||
-      record.grid_size != kGridSize || record.range_index != range_index ||
-      std::fabs(record.center_lat - center_lat) >= kCenterEpsilonDeg ||
-      std::fabs(record.center_lon - center_lon) >= kCenterEpsilonDeg ||
-      record.half_span_km != half_span_km ||
-      record.checksum != checksum(record)) {
+  PersistedGrid* record = allocatePersistenceScratch();
+  if (record == nullptr) return false;
+
+  const bool valid =
+      platform::TerrainCacheStore::load(record, sizeof(*record)) &&
+      record->magic == kCacheMagic &&
+      record->version == kCacheFormatVersion &&
+      record->grid_size == kGridSize && record->range_index == range_index &&
+      std::fabs(record->center_lat - center_lat) < kCenterEpsilonDeg &&
+      std::fabs(record->center_lon - center_lon) < kCenterEpsilonDeg &&
+      record->half_span_km == half_span_km &&
+      record->checksum == checksum(*record);
+  if (!valid) {
+    std::free(record);
     return false;
   }
-  s_grid.center_lat = record.center_lat;
-  s_grid.center_lon = record.center_lon;
-  s_grid.half_span_km = record.half_span_km;
-  memcpy(s_grid.elev_m, record.elev_m, sizeof(s_grid.elev_m));
-  memcpy(s_grid.land_mask, record.land_mask, sizeof(s_grid.land_mask));
+  s_grid.center_lat = record->center_lat;
+  s_grid.center_lon = record->center_lon;
+  s_grid.half_span_km = record->half_span_km;
+  memcpy(s_grid.elev_m, record->elev_m, sizeof(s_grid.elev_m));
+  memcpy(s_grid.land_mask, record->land_mask, sizeof(s_grid.land_mask));
+  std::free(record);
   s_grid.valid = true;
   s_grid_range_index = range_index;
   endDownload();
@@ -322,18 +344,23 @@ bool loadPersistedGrid(double center_lat, double center_lon,
 
 bool persistGrid() {
   if (!s_grid.valid || s_grid_range_index == kNoRange) return false;
-  PersistedGrid record = {};
-  record.magic = kCacheMagic;
-  record.version = kCacheFormatVersion;
-  record.grid_size = kGridSize;
-  record.center_lat = s_grid.center_lat;
-  record.center_lon = s_grid.center_lon;
-  record.half_span_km = s_grid.half_span_km;
-  record.range_index = s_grid_range_index;
-  memcpy(record.elev_m, s_grid.elev_m, sizeof(record.elev_m));
-  memcpy(record.land_mask, s_grid.land_mask, sizeof(record.land_mask));
-  record.checksum = checksum(record);
-  return platform::TerrainCacheStore::save(&record, sizeof(record));
+  PersistedGrid* record = allocatePersistenceScratch();
+  if (record == nullptr) return false;
+
+  record->magic = kCacheMagic;
+  record->version = kCacheFormatVersion;
+  record->grid_size = kGridSize;
+  record->center_lat = s_grid.center_lat;
+  record->center_lon = s_grid.center_lon;
+  record->half_span_km = s_grid.half_span_km;
+  record->range_index = s_grid_range_index;
+  memcpy(record->elev_m, s_grid.elev_m, sizeof(record->elev_m));
+  memcpy(record->land_mask, s_grid.land_mask, sizeof(record->land_mask));
+  record->checksum = checksum(*record);
+  const bool saved =
+      platform::TerrainCacheStore::save(record, sizeof(*record));
+  std::free(record);
+  return saved;
 }
 
 bool ensureGridPersisted(double center_lat, double center_lon,
