@@ -14,8 +14,10 @@ class Region:
     south: float
     east: float
     north: float
-    mask_width: int = 512
-    mask_height: int = 512
+    terrain_width: int = 512
+    terrain_height: int = 512
+    water_width: int = 2048
+    water_height: int = 2048
 
 
 DEFAULT_REGION = "NL"
@@ -49,8 +51,9 @@ def get_region(code: str) -> Region:
         raise ValueError(f"invalid ISO country list for {region.code}")
     if not (region.west < region.east and region.south < region.north):
         raise ValueError(f"invalid bounds for {region.code}")
-    if region.mask_width <= 0 or region.mask_height <= 0:
-        raise ValueError(f"invalid mask dimensions for {region.code}")
+    if min(region.terrain_width, region.terrain_height,
+           region.water_width, region.water_height) <= 0:
+        raise ValueError(f"invalid terrain dimensions for {region.code}")
     return region
 
 
@@ -72,8 +75,10 @@ constexpr double kWest = {region.west};
 constexpr double kSouth = {region.south};
 constexpr double kEast = {region.east};
 constexpr double kNorth = {region.north};
-constexpr uint16_t kMaskWidth = {region.mask_width};
-constexpr uint16_t kMaskHeight = {region.mask_height};
+constexpr uint16_t kTerrainWidth = {region.terrain_width};
+constexpr uint16_t kTerrainHeight = {region.terrain_height};
+constexpr uint16_t kWaterWidth = {region.water_width};
+constexpr uint16_t kWaterHeight = {region.water_height};
 
 }}  // namespace data::region_pack
 """

@@ -59,11 +59,6 @@ namespace config
     constexpr double kDefaultRadarLon = 4.9041;
 
     constexpr int kTerrainGridSize = 61;
-    constexpr char kTerrainTileUrlFmt[] =
-        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.png";
-    constexpr unsigned long kTerrainRequestTimeoutMs = 5000;
-    constexpr unsigned long kTerrainTileIntervalMs = 250;
-    constexpr unsigned long kTerrainRetryIntervalMs = 60000;
 
     /** Poll adsb.fi (API public limit: 1 req/s). */
     constexpr unsigned long kAdsbFetchIntervalMs = 10000;

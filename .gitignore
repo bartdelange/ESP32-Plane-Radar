@@ -5,6 +5,9 @@ compile_commands.json
 .clangd
 .cache/
 release/
+# Host-only geospatial source/cache files must never enter firmware history.
+*.tif
+*.tiff
 # Native harness scratch (settings live in ~/.plane-radar/, not the repo)
 *.dSYM/
 .vscode/.browse.c_cpp.db*

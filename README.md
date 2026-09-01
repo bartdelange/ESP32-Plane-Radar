@@ -9,7 +9,7 @@ Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (
 ## What it does
 
 1. **Wi‑Fi setup** (if needed) — captive portal on AP **`PlaneRadar-Setup`**
-2. **Radar** — live aircraft from [adsb.fi](https://opendata.adsb.fi/) on a sonar-style grid with airport/runway overlays and optional cached terrain relief
+2. **Radar** — live aircraft from [adsb.fi](https://opendata.adsb.fi/) on a sonar-style grid with airport/runway overlays and optional compiled terrain relief
 
 After Wi‑Fi is saved, the device reconnects automatically; the radar runs in the main loop with periodic ADS-B updates (~3 s).
 
@@ -112,12 +112,13 @@ Layout and colors: `include/ui/radar_theme.h`.
 
 ### Terrain
 
-- First use for a location/range downloads the required 1–4 AWS Terrarium PNG tiles before live ADS-B polling begins.
-- Tiles are staged in LittleFS, TLS is closed, and the low-memory decoder builds a 61×61 elevation grid with the generated regional land/water mask. PNG staging is deleted after each decode.
-- The final decoded grid and land bitset are stored as one checksummed binary cache. Later boots with exactly the same center, range index and terrain span load it without terrain HTTP/TLS/PNG work.
-- Location or range changes synchronously load or rebuild terrain before ADS-B resumes with the new fetch radius. A rebuild closes the optional LAN settings server so its WebServer cannot compete for heap.
-- Failure is non-fatal: the normal background is used and ADS-B starts normally. Terrain is not retried from the live ADS-B loop; another attempt occurs on a later boot or view change.
-- The generated Netherlands mask keeps reclaimed Flevoland as land while IJsselmeer and Markermeer remain water.
+- The selected regional pack contains build-time Copernicus DEM GLO-30 elevation and its matching categorical Water Body Mask (WBM); the device makes no terrain network requests.
+- The generated 512×512 signed elevation raster and packed 2048×2048 water mask remain in flash. Runtime extracts only the current 61×61 elevation view; water is queried independently at display-pixel resolution.
+- Elevation is area-averaged during generation, then smoothly interpolated on screen. WBM is categorical: negative-elevation polders remain land, while zero-elevation lakes remain water.
+- Terrain is part of the cached static radar background, so normal ADS-B refreshes only restore that background and draw dynamic aircraft.
+- A view outside the compiled pack gracefully uses the normal radar background.
+
+Source attribution: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The generated pack uses the GLO-30 Public 2021 release from the [AWS Open Data distribution](https://registry.opendata.aws/copernicus-dem/); WBM categories follow the Copernicus DEM Product Handbook.
 
 ### Range presets
 
@@ -137,12 +138,13 @@ removed automatically without affecting other saved settings.
 
 - The compiled data pack contains a common worldwide-large-airport base plus medium and small airports for its selected region (currently `NL`) from OurAirports; all open runway strips in range (helipads excluded)
 - Teal runway lines with one ICAO label per airport (e.g. `KJFK`); toggle in the Wi‑Fi setup portal
-- Regenerate the airport and Natural Earth land-mask data for the selected region: `python3 scripts/build_region_pack.py --region NL`
+- Regenerate airport data plus the Copernicus terrain pack: `uv run --with-requirements scripts/terrain-requirements.txt python scripts/build_region_pack.py --region NL`
 
 The firmware compiles one pack at a time; there is no runtime region selector or
 downloader. Add or adjust maintained regions only in `scripts/regions.py`, then
 run the coordinator above. Region selection controls both regional airport
-coverage and the land-mask bounds.
+coverage and the terrain/WBM bounds. The generator reads only regional COG
+ranges and does not store or commit raw GeoTIFFs.
 
 ### Aircraft
 
@@ -174,7 +176,7 @@ Edit **`include/config.h`** for hardware and behavior:
 | Default location | `kDefaultRadarLat` / `kDefaultRadarLon` (overridden by the persisted Current Location) |
 | ADS-B | `kAdsbFetchIntervalMs`, `kAdsbShowGroundAircraft`, `kVerticalRateDeadbandFpm` |
 | Routes/tracks | `kRouteLookupsPerCycle`, `kRouteCacheSize`, route TTLs, `kTrackHistoryDepth`, `kTrackHistoryMax`, `kTrackHistoryTtlMs`, `kTagCycleIntervalMs` |
-| Terrain | `kTerrainGridSize`, tile URL, request timeout and tile interval |
+| Terrain | `kTerrainGridSize`; regional source/output dimensions live in `scripts/regions.py` |
 
 Fixed range presets live in `include/core/settings.h`.
 
@@ -190,8 +192,8 @@ include/
     adsb.h, aircraft.h     — ADS-B fetch and decode
     route.h                — adsbdb route/operator cache and lookup
     track_history.h        — bounded portable aircraft track history
-    terrain.h              — decoded terrain state, persistence and acquisition
-    land_water.h           — generated regional land/water classification
+    terrain.h              — flash-backed regional elevation extraction
+    land_water.h           — Copernicus WBM classification
     region_pack.h          — generated metadata for the selected compiled pack
     portal_params.h        — config-portal field table (one per destination)
     large_airports.h
@@ -206,10 +208,9 @@ data/
   ui_font.vlw              — embedded smooth UI font (Noto Sans Bold)
 scripts/
   regions.py                 — shared maintained-region definitions
-  build_region_pack.py       — regenerate the selected airport pack
+  build_region_pack.py       — regenerate the selected regional pack
   build_large_airports.py
-  build_land_mask.py       — Natural Earth regional mask generator
-  gen_png_fixtures.py      — deterministic decoder fixture generator
+  build_copernicus_terrain.py — Copernicus DEM/WBM generator
 src/
   main.cpp                 — setup()/loop(), shared verbatim
   core/                    — settings, geo, adsb, portal_params, airport data
@@ -219,7 +220,7 @@ src/
     device/                — NVS, HTTPClient, WiFiManager, GC9A01, embedded font
     native/                — JSON settings, libcurl, SDL panel, keyboard BOOT,
                              simulated radio, localhost config portal
-test/                      — host, terrain-fetch and PNG tests (`make test`)
+test/                      — portable core/unit tests (`make test`)
 ```
 
 ## Wiring (GC9A01 ↔ ESP32-C3 Super Mini)
@@ -281,7 +282,6 @@ make debug-device-test  # on-device GDB, halt at setup()
 make debug-device-run   # on-device GDB, board runs
 make native             # emulator run
 make test               # all host unit tests
-make test-live          # opt-in live AWS terrain smoke test
 ```
 
 - PlatformIO envs: **`supermini`** (release), **`supermini_debug`** (`-Og -g`, on-device GDB), and **`native`** / **`native_test`** / **`native_test_fetch`** / **`native_test_png`** / **`native_test_live`** (host)

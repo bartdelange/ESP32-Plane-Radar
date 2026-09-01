@@ -14,7 +14,6 @@
 #include "core/tap_gesture.h"
 #include "core/terrain.h"
 #include "core/track_history.h"
-#include "platform/png_decode.h"
 #include "platform/wifi_setup.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
@@ -52,15 +51,12 @@ void scheduleAdsbFetchSoon() {
                          config::kAdsbMinRefetchMs;
 }
 
-/** Resolve decorative terrain synchronously, before the next ADS-B request. */
+/** Extract the decorative terrain view from the flash-resident regional pack. */
 void resolveTerrainTransition() {
   g_terrain_transition_pending = false;
   core::terrain::clear();
-  if (ui::radar::showTerrain() && wifiIsConnected()) {
-    // A settings save may have initiated this transition from the optional
-    // LAN portal. Release its WebServer before terrain TLS/PNG allocations.
-    wifiStopLanWebPortal();
-    core::terrain::ensureGridPersisted(
+  if (ui::radar::showTerrain()) {
+    core::terrain::ensureGrid(
         core::settings::lat(), core::settings::lon(), ui::radar::rangeIndex(),
         ui::radar::terrainHalfSpanKm());
   }
@@ -170,8 +166,6 @@ void setup() {
   core::settings::setCenterChangedFn(onCenterChanged);
   core::settings::setRangeChangedFn(onRangeChanged);
   core::adsb::setPollFn(pollWifi);
-  core::terrain::setPollFn(pollWifi);
-  core::terrain::setPngDecoder(platform_png::decode);
   g_last_terrain_enabled = ui::radar::showTerrain();
   if (wifiSetupConnect()) {
     resolveTerrainTransition();

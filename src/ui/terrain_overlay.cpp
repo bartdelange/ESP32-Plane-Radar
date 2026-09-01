@@ -88,7 +88,7 @@ void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
   // The row weight is constant across the scanline: blend the two bracketing
   // grid rows into one kGrid-entry row up front so the per-pixel work is a
   // single horizontal lerp. Whole metres keep both lerps inside int32 for any
-  // pair of terrarium values, so neither can overflow on real or absurd data.
+  // pair of int16 terrain values, so neither can overflow on real data.
   const int r = s_cell[y];
   const int32_t wy = s_frac[y];
   const int16_t* north = &grid.elev_m[r * kGrid];
