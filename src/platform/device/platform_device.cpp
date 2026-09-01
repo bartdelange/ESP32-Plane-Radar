@@ -3,6 +3,7 @@
 #include "core/platform.h"
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 
 #include <cstdarg>
@@ -30,6 +31,15 @@ void logf(const char* fmt, ...) {
   if (n > 0) {
     Serial.print(buf);
   }
+}
+
+void logHeap(const char* label) {
+  logf("HEAP %s free=%u largest=%u minimum=%u\n", label,
+       static_cast<unsigned>(ESP.getFreeHeap()),
+       static_cast<unsigned>(
+           heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)),
+       static_cast<unsigned>(
+           heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT)));
 }
 
 void reboot() {

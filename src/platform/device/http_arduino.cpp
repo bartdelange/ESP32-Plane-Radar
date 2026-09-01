@@ -145,6 +145,9 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
   http.setTimeout(timeout_ms);
   http.setConnectTimeout(kConnectTimeoutMs);
   poll(fn);
+  if (strstr(url, "adsb.fi") != nullptr) {
+    logHeap("ADSB-before-TLS");
+  }
   // Exactly one transport attempt per logical request. Retrying GET() here on
   // NOT_CONNECTED used to create a new TLS handshake every ~5 ms after an
   // mbedTLS allocation failure; subsystem-level cadence/backoff owns retries.

@@ -64,6 +64,8 @@ int s_scale_label_h = 0;
 lgfx::LovyanGFX* s_draw = &tft;
 LGFX_Sprite s_frame(&tft);
 bool s_frame_ready = false;
+/** True when the sprite contains no aircraft and can be drawn onto directly. */
+bool s_frame_static_only = false;
 bool s_tag_cycle_active = false;
 unsigned long s_tag_cycle_phase_drawn = 0;
 
@@ -744,11 +746,14 @@ bool ensureFrameSprite() {
     return true;
   }
   s_frame.setColorDepth(16);
+  core::platform::logHeap("framebuffer-before");
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     core::platform::logf("radar: frame sprite alloc failed\n");
+    core::platform::logHeap("framebuffer-failed");
     return false;
   }
   s_frame_ready = true;
+  core::platform::logHeap("framebuffer-after");
   return true;
 }
 
@@ -787,10 +792,15 @@ void cacheStaticFrame() {
   }
 
   clearStaticCache();
+  const size_t cache_bytes = run_count * sizeof(StaticRun);
+  core::platform::logf("radar: static cache requesting %u bytes\n",
+                       static_cast<unsigned>(cache_bytes));
+  core::platform::logHeap("static-cache-before");
   s_static_runs = static_cast<StaticRun*>(
-      std::malloc(run_count * sizeof(StaticRun)));
+      std::malloc(cache_bytes));
   if (s_static_runs == nullptr) {
     core::platform::logf("radar: static frame cache alloc failed\n");
+    core::platform::logHeap("static-cache-failed");
     return;
   }
 
@@ -816,6 +826,7 @@ void cacheStaticFrame() {
   if (s_static_cache_ready) {
     core::platform::logf("radar: cached static frame (%u bytes)\n",
                          static_cast<unsigned>(out * sizeof(StaticRun)));
+    core::platform::logHeap("static-cache-after");
   }
 }
 
@@ -846,14 +857,22 @@ bool restoreStaticFrame() {
 // sprite, then blit it to the panel in a single pushSprite. Because the panel
 // is updated in one pass, labels never show an erase/redraw gap — no flicker.
 void renderFrame(bool rebuild_static) {
-  if (rebuild_static || !restoreStaticFrame()) {
+  if (rebuild_static) {
+    clearStaticCache();
     drawStaticGrid(s_frame);  // opens its own DrawScope(s_frame)
-    cacheStaticFrame();
+    s_frame_static_only = true;
+  } else if (!s_frame_static_only) {
+    if (!restoreStaticFrame()) {
+      drawStaticGrid(s_frame);  // cache unavailable/corrupt: off-screen rebuild
+    }
+    s_frame_static_only = true;
   }
+  if (!s_static_cache_ready) cacheStaticFrame();
   {
     const DrawScope scope(s_frame);
     drawAircraft();
   }
+  s_frame_static_only = false;
   s_frame.pushSprite(0, 0);
   tft.setTextDatum(textdatum_t::top_left);
 }
@@ -885,6 +904,26 @@ void radarDisplayRefreshAircraft() {
   }
 
   radarDisplayDraw();
+}
+
+void radarDisplayPrepareForNetwork() {
+  if (!s_frame_ready) return;
+
+  // Cache is decorative and lower-priority than TLS. Restore the pristine
+  // static image into the already-owned framebuffer, then release the cache
+  // before WiFiClientSecure begins its handshake. The panel is untouched, so
+  // there is no visible terrain scan or partial frame.
+  if (!s_frame_static_only) {
+    if (!restoreStaticFrame()) {
+      drawStaticGrid(s_frame);
+    }
+    s_frame_static_only = true;
+  }
+  if (s_static_runs != nullptr) {
+    core::platform::logf("radar: releasing static cache before network\n");
+  }
+  clearStaticCache();
+  core::platform::logHeap("network-ready");
 }
 
 void radarDisplayTick() {

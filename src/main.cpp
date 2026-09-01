@@ -60,6 +60,7 @@ void resolveTerrainTransition() {
         core::settings::lat(), core::settings::lon(), ui::radar::rangeIndex(),
         ui::radar::terrainHalfSpanKm());
   }
+  pf::logHeap("terrain-ready");
   scheduleAdsbFetchSoon();
 }
 
@@ -139,6 +140,7 @@ void pollWifi() { wifiLoop(); }
 
 void fetchAndDrawAircraft() {
   const float fetch_km = ui::radar::fetchRadiusKm();
+  ui::radarDisplayPrepareForNetwork();
   if (!core::adsb::fetchUpdate(core::settings::lat(), core::settings::lon(),
                                fetch_km)) {
     handleBootButton();
@@ -153,6 +155,7 @@ void fetchAndDrawAircraft() {
 void setup() {
   pf::logInit();
   pf::logf("\nPlane Radar\n");
+  pf::logHeap("boot");
 
   bootButtonInit();
   displayInit();
@@ -168,6 +171,7 @@ void setup() {
   core::adsb::setPollFn(pollWifi);
   g_last_terrain_enabled = ui::radar::showTerrain();
   if (wifiSetupConnect()) {
+    pf::logHeap("wifi-connected");
     resolveTerrainTransition();
     showRadarIfConnected();
     // Fetch immediately after association instead of waiting one full period.

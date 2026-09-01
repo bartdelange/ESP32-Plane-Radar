@@ -332,8 +332,10 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
 
   if (!platform::HttpClient::get(url, parseBody, kRequestTimeoutMs,
                                  s_poll_fn)) {
+    platform::logHeap("ADSB-HTTPS-returned-failed");
     return false;
   }
+  platform::logHeap("ADSB-HTTPS-returned");
 
   resolveRoutes();
   for (size_t i = 0; i < s_aircraft_count; ++i)
@@ -341,6 +343,7 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   core::track::expireStale();
   platform::logf("adsb: %u aircraft\n",
                  static_cast<unsigned>(s_aircraft_count));
+  platform::logHeap("ADSB-cycle-complete");
   return true;
 }
 
