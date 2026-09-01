@@ -38,7 +38,7 @@ constexpr int kMaxTiles = 4;
 
 /** terrain-tiles publishes zoom 0 through 15. */
 constexpr int kMaxZoom = 15;
-constexpr uint16_t kCacheFormatVersion = 1;
+constexpr uint16_t kCacheFormatVersion = 2;
 
 /** One fetched elevation grid, keyed by the view it was sampled for. */
 struct Grid {

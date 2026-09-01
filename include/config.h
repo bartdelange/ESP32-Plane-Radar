@@ -58,7 +58,7 @@ namespace config
     constexpr double kDefaultRadarLat = 52.3676;
     constexpr double kDefaultRadarLon = 4.9041;
 
-    constexpr int kTerrainGridSize = 41;
+    constexpr int kTerrainGridSize = 61;
     constexpr char kTerrainTileUrlFmt[] =
         "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/%d/%d/%d.png";
     constexpr unsigned long kTerrainRequestTimeoutMs = 5000;
