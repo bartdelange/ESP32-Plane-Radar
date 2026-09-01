@@ -12,7 +12,9 @@
 #include "core/adsb.h"
 #include "core/settings.h"
 #include "core/tap_gesture.h"
+#include "core/terrain.h"
 #include "core/track_history.h"
+#include "platform/png_decode.h"
 #include "platform/wifi_setup.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
@@ -26,6 +28,8 @@ bool g_radar_visible = false;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
+bool g_terrain_transition_pending = false;
+bool g_last_terrain_enabled = true;
 
 void showRadarIfConnected() {
   if (!wifiIsConnected()) {
@@ -48,21 +52,39 @@ void scheduleAdsbFetchSoon() {
                          config::kAdsbMinRefetchMs;
 }
 
-void onRangeChanged() {
+/** Resolve decorative terrain synchronously, before the next ADS-B request. */
+void resolveTerrainTransition() {
+  g_terrain_transition_pending = false;
+  core::terrain::clear();
+  if (ui::radar::showTerrain() && wifiIsConnected()) {
+    // A settings save may have initiated this transition from the optional
+    // LAN portal. Release its WebServer before terrain TLS/PNG allocations.
+    wifiStopLanWebPortal();
+    core::terrain::ensureGridPersisted(
+        core::settings::lat(), core::settings::lon(), ui::radar::rangeIndex(),
+        ui::radar::terrainHalfSpanKm());
+  }
   scheduleAdsbFetchSoon();
+}
+
+void onRangeChanged() {
+  core::terrain::clear();
+  g_terrain_transition_pending = true;
 }
 
 /** Fired by core::settings whenever lat()/lon() actually move. */
 void onCenterChanged() {
   core::adsb::clear();
+  core::terrain::clear();
   core::track::clear();
-  g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
+  g_terrain_transition_pending = true;
 }
 
 /** State change plus NVS only — the drain loop in handleBootButton() owns the
  *  (single, post-drain) repaint. Returns whether anything actually changed. */
 bool applyRangeNext() {
   ui::radar::rangeNext();
+  resolveTerrainTransition();
   char range_label[12];
   ui::radar::formatCurrentRing3Label(range_label, sizeof(range_label));
   pf::logf("Range: %s (outer ~%.0f km)\n", range_label,
@@ -148,7 +170,11 @@ void setup() {
   core::settings::setCenterChangedFn(onCenterChanged);
   core::settings::setRangeChangedFn(onRangeChanged);
   core::adsb::setPollFn(pollWifi);
+  core::terrain::setPollFn(pollWifi);
+  core::terrain::setPngDecoder(platform_png::decode);
+  g_last_terrain_enabled = ui::radar::showTerrain();
   if (wifiSetupConnect()) {
+    resolveTerrainTransition();
     showRadarIfConnected();
     // Fetch immediately after association instead of waiting one full period.
     g_last_adsb_fetch_ms = pf::nowMs() - config::kAdsbFetchIntervalMs;
@@ -158,6 +184,12 @@ void setup() {
 void loop() {
   handleBootButton();
   wifiLoop();
+
+  const bool terrain_enabled = ui::radar::showTerrain();
+  if (terrain_enabled != g_last_terrain_enabled) {
+    g_last_terrain_enabled = terrain_enabled;
+    g_terrain_transition_pending = true;
+  }
 
   if (!wifiIsConnected()) {
     if (g_radar_visible) {
@@ -181,6 +213,10 @@ void loop() {
     }
   } else {
     g_wifi_down_since = 0;
+    if (g_terrain_transition_pending) {
+      resolveTerrainTransition();
+      if (g_radar_visible) ui::radarDisplayDraw();
+    }
     if (!g_radar_visible) {
       showRadarIfConnected();
     } else if (pf::nowMs() - g_last_adsb_fetch_ms >=

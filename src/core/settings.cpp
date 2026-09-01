@@ -23,6 +23,7 @@ namespace core::settings
      */
     constexpr char kKeyKm[] = "useKm";
     constexpr char kKeyRunways[] = "showRwys";
+    constexpr char kKeyTerrain[] = "showTerrain";
     constexpr char kKeyRoutes[] = "showRoutes";
     constexpr char kKeyAirlineDisplay[] = "airlnDisp";
     constexpr char kKeyLat[] = "lat";
@@ -37,6 +38,7 @@ namespace core::settings
     size_t s_range_count = 0;
     bool s_use_km = true;
     bool s_show_runways = true;
+    bool s_show_terrain = true;
     bool s_show_routes = true;
     AirlineDisplay s_airline_display = AirlineDisplay::kNone;
 
@@ -119,6 +121,7 @@ namespace core::settings
                                                    : 0);
     s_use_km = KV::getBool(kNsRadar, kKeyKm, true);
     s_show_runways = KV::getBool(kNsRadar, kKeyRunways, true);
+    s_show_terrain = KV::getBool(kNsRadar, kKeyTerrain, true);
     s_show_routes = KV::getBool(kNsRadar, kKeyRoutes, true);
     const uint8_t airline_mode = KV::getU8(
         kNsRadar, kKeyAirlineDisplay, static_cast<uint8_t>(AirlineDisplay::kNone));
@@ -243,6 +246,8 @@ namespace core::settings
 
   bool showRunways() { return s_show_runways; }
 
+  bool showTerrain() { return s_show_terrain; }
+
   bool showRoutes() { return s_show_routes; }
 
   AirlineDisplay airlineDisplay() { return s_airline_display; }
@@ -259,6 +264,13 @@ namespace core::settings
     s_show_runways = portalCheckboxChecked(checkbox_value);
     KV::putBool(kNsRadar, kKeyRunways, s_show_runways);
     platform::logf("Runway overlay: %s\n", s_show_runways ? "on" : "off");
+  }
+
+  void saveTerrainFromPortal(const char *checkbox_value)
+  {
+    s_show_terrain = portalCheckboxChecked(checkbox_value);
+    KV::putBool(kNsRadar, kKeyTerrain, s_show_terrain);
+    platform::logf("Terrain: %s\n", s_show_terrain ? "on" : "off");
   }
 
   void saveRouteDisplayFromPortal(const char *select_value)
@@ -286,10 +298,12 @@ namespace core::settings
   {
     s_use_km = true;
     s_show_runways = true;
+    s_show_terrain = true;
     s_show_routes = true;
     s_airline_display = AirlineDisplay::kNone;
     KV::remove(kNsRadar, kKeyKm);
     KV::remove(kNsRadar, kKeyRunways);
+    KV::remove(kNsRadar, kKeyTerrain);
     KV::remove(kNsRadar, kKeyRoutes);
     KV::remove(kNsRadar, kKeyAirlineDisplay);
     // rangeIdx is intentionally left alone; see the header.

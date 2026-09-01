@@ -19,6 +19,8 @@ bool wifiSetupConnect();
 bool wifiReconnect();
 /** Toggle the on-demand STA-only settings server; never starts an AP. */
 bool wifiToggleLanWebPortal();
+/** Stop the optional STA settings server without changing the STA link. */
+void wifiStopLanWebPortal();
 /** Poll BOOT and service the LAN settings server only while explicitly active. */
 void wifiLoop();
 bool wifiBootButtonPressed();

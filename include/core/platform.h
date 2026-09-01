@@ -182,4 +182,19 @@ struct HttpClient {
                        unsigned long timeout_ms, PollFn poll);
 };
 
+/** Platform-owned staging body used to close TLS before terrain decoding. */
+struct TemporaryBody {
+  static bool prepare();
+  static bool store(BodyReader& body);
+  static bool replay(BodyFn on_body);
+  static void clear();
+};
+
+/** Atomic persistent storage for one decoded terrain-cache blob. */
+struct TerrainCacheStore {
+  static bool load(void* data, size_t len);
+  static bool save(const void* data, size_t len);
+  static void remove();
+};
+
 }  // namespace core::platform

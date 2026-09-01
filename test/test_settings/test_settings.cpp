@@ -25,6 +25,7 @@ void test_fresh_store_uses_the_default_current_location(void) {
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLat, cs::lat());
   TEST_ASSERT_DOUBLE_WITHIN(1e-6, config::kDefaultRadarLon, cs::lon());
   TEST_ASSERT_TRUE(cs::useKm());
+  TEST_ASSERT_TRUE(cs::showTerrain());
 }
 
 void test_current_location_is_persisted_and_validated(void) {
@@ -175,6 +176,7 @@ void test_unitsReset_leaves_range_alone(void) {
   // keeps the user's chosen zoom.
   cs::saveKmFromPortal(nullptr);
   cs::saveRunwaysFromPortal(nullptr);
+  cs::saveTerrainFromPortal(nullptr);
   cs::rangeNext();
   const uint8_t range_before = cs::rangeIndex();
 
@@ -182,6 +184,7 @@ void test_unitsReset_leaves_range_alone(void) {
 
   TEST_ASSERT_TRUE(cs::useKm());
   TEST_ASSERT_TRUE(cs::showRunways());
+  TEST_ASSERT_TRUE(cs::showTerrain());
   TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(cs::AirlineDisplay::kNone),
                           static_cast<uint8_t>(cs::airlineDisplay()));
   TEST_ASSERT_EQUAL_UINT8(range_before, cs::rangeIndex());

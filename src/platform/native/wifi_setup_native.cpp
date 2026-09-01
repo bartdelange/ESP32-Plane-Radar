@@ -197,6 +197,11 @@ bool wifiToggleLanWebPortal() {
   return s_lan_portal_enabled;
 }
 
+void wifiStopLanWebPortal() {
+  portalServerStop();
+  s_lan_portal_enabled = false;
+}
+
 void wifiLoop() {
   bootButtonPollLongPress();
   if (!s_link_up) {

@@ -527,6 +527,8 @@ bool wifiToggleLanWebPortal() {
   return true;
 }
 
+void wifiStopLanWebPortal() { stopLanWebPortal(); }
+
 void wifiLoop() {
   // Unconditional, and before the portal is serviced: a long hold must reset
   // WiFi with no link and no portal running just as well as with one, and must
