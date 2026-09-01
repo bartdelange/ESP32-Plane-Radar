@@ -46,7 +46,7 @@ void advanceMs(unsigned long ms) { s_fake_now_ms += ms; }
 /** Base search centre: Almere, inside the generated Netherlands mask. */
 constexpr double kBaseLat = 52.3676;
 constexpr double kBaseLon = 4.9041;
-/** ~55 km to the screen edge, i.e. the wide end of the range presets. */
+/** Representative mid-range view spanning roughly 55 km to the screen edge. */
 constexpr float kSpan = 55.4f;
 constexpr uint8_t kRange = 1;
 

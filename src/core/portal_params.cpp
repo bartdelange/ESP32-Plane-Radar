@@ -17,8 +17,6 @@ namespace core::portal
     constexpr Field kFields[] = {
         {"radar_lat", "Current Location Latitude (deg)", kCoordAttrs, Kind::kText, 20, false},
         {"radar_lon", "Current Location Longitude (deg)", kCoordAttrs, Kind::kText, 20, false},
-        {"range_presets", "Radar range presets (km, comma-separated)",
-         "pattern=\"[0-9 ,]+\" type=\"text\"", Kind::kText, 48, false},
         {"use_km", "Display distances in km", "type=\"checkbox\"",
          Kind::kCheckbox, 2, true},
         {"show_runways", "Show airport runways", "type=\"checkbox\"",
@@ -62,11 +60,6 @@ namespace core::portal
     if (isField(field, "radar_lon"))
     {
       snprintf(buf, len, "%.6f", settings::lon());
-      return;
-    }
-    if (isField(field, "range_presets"))
-    {
-      settings::formatRangePresets(buf, len);
       return;
     }
     if (isField(field, "airline_mode"))
@@ -121,15 +114,6 @@ namespace core::portal
     if (isField(field, "radar_lon"))
     {
       snprintf(s_pending_lon, sizeof(s_pending_lon), "%s", value ? value : "");
-      return;
-    }
-    if (isField(field, "range_presets"))
-    {
-      if (!settings::saveRangePresetsFromPortal(value))
-      {
-        core::platform::logf(
-            "Invalid range presets; keeping previous configured ranges\n");
-      }
       return;
     }
     if (isField(field, "use_km"))

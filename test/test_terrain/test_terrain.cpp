@@ -27,7 +27,6 @@
 
 #include "config.h"
 #include "core/land_water.h"
-#include "core/region_pack.h"
 #include "core/settings.h"
 #include "core/terrain.h"
 
@@ -48,8 +47,7 @@ constexpr double kLon = 15.4062;
 constexpr float kScreenEdgeScale = 120.0f / 107.0f;
 
 constexpr float halfSpanKm(size_t preset) {
-  return core::settings::kDefaultRangeKm[preset] *
-         core::settings::kRing3ToOuterKm * kScreenEdgeScale;
+  return core::settings::kRangePresets[preset].outer_km * kScreenEdgeScale;
 }
 
 /** The 20 km default preset: ~30 km from the centre to the screen edge. */
@@ -368,7 +366,7 @@ void test_tilePixel_clamps_at_the_mercator_limit(void) {
 void test_zoom_is_maximal_for_every_range_preset(void) {
   // The whole point of zoomForView() is "as much detail as 4 tiles can buy":
   // the view must fit 256 px on both axes, and one level finer must not.
-  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
+  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
     const float span_km = halfSpanKm(p);
     const int zoom = ct::zoomForView(kLat, kLon, span_km);
     TEST_ASSERT_TRUE_MESSAGE(zoom >= 0 && zoom <= ct::kMaxZoom,
@@ -393,13 +391,13 @@ void test_zoom_is_maximal_for_every_range_preset(void) {
 void test_zoom_matches_the_standard_formula(void) {
   // Independently: the widest axis of the box must stay within 256 px, so the
   // limit is 2^z <= 360 / span_deg / sec(lat) at 111 km/deg. For the four
-  // default presets at this centre step down as their view spans widen.
-  const int expected[] = {9, 9, 8, 7, 6, 6};
+  // fixed presets at this centre step down as their view spans widen.
+  const int expected[] = {9, 8, 7, 6, 5};
   TEST_ASSERT_EQUAL_UINT32_MESSAGE(
-      core::settings::kDefaultRangeCount,
+      core::settings::kRangePresetCount,
       sizeof(expected) / sizeof(expected[0]),
       "a range preset was added without an expected zoom");
-  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
+  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
     TEST_ASSERT_EQUAL_INT(expected[p], ct::zoomForView(kLat, kLon,
                                                        halfSpanKm(p)));
   }
@@ -407,7 +405,7 @@ void test_zoom_matches_the_standard_formula(void) {
 
 void test_zoom_never_rises_as_the_view_widens(void) {
   int previous = ct::kMaxZoom + 1;
-  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
+  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
     const int zoom = ct::zoomForView(kLat, kLon, halfSpanKm(p));
     TEST_ASSERT_TRUE_MESSAGE(zoom <= previous,
                              "a wider range preset asked for finer tiles");
@@ -432,7 +430,7 @@ void test_tiles_cover_every_grid_sample(void) {
   // Run the coverage property over the real presets and over centres that
   // stress the projection: the equator, the southern hemisphere, and either
   // side of the antimeridian where the tile x index wraps.
-  for (size_t p = 0; p < core::settings::kDefaultRangeCount; ++p) {
+  for (size_t p = 0; p < core::settings::kRangePresetCount; ++p) {
     assertViewIsCovered(kLat, kLon, halfSpanKm(p));
     assertViewIsCovered(0.0, 0.0, halfSpanKm(p));
     assertViewIsCovered(-33.8688, 151.2093, halfSpanKm(p));
@@ -548,31 +546,47 @@ void test_netherlands_mask_distinguishes_polder_and_water(void) {
   TEST_ASSERT_FALSE_MESSAGE(land, "Markermeer must be classified as water");
 }
 
-void test_land_coverage_softens_compiled_mask_cell_edges(void) {
-  namespace rp = data::region_pack;
-  const double cell_lon = (rp::kEast - rp::kWest) / rp::kMaskWidth;
-  const double cell_lat = (rp::kNorth - rp::kSouth) / rp::kMaskHeight;
-  for (int row = 0; row < rp::kMaskHeight; ++row) {
-    const double lat = rp::kNorth - (row + 0.5) * cell_lat;
-    for (int col = 0; col + 1 < rp::kMaskWidth; ++col) {
-      const double west_center = rp::kWest + (col + 0.5) * cell_lon;
-      bool west_land = false;
-      bool east_land = false;
-      TEST_ASSERT_TRUE(core::land_water::classify(lat, west_center,
-                                                   &west_land));
-      TEST_ASSERT_TRUE(core::land_water::classify(
-          lat, west_center + cell_lon, &east_land));
-      if (west_land == east_land) continue;
+bool nearestElevationGridLand(const core::land_water::PixelView& view, int x,
+                              int y, int elevation_grid_size) {
+  const int last_pixel = view.size - 1;
+  const int last_grid = elevation_grid_size - 1;
+  const int grid_x = (x * last_grid + last_pixel / 2) / last_pixel;
+  const int grid_y = (y * last_grid + last_pixel / 2) / last_pixel;
+  const int sample_x = (grid_x * last_pixel + last_grid / 2) / last_grid;
+  const int sample_y = (grid_y * last_pixel + last_grid / 2) / last_grid;
+  bool land = false;
+  core::land_water::classifyPixel(view, sample_x, sample_y, &land);
+  return land;
+}
 
-      uint8_t coverage = 0;
-      TEST_ASSERT_TRUE(core::land_water::coverage(
-          lat, west_center + cell_lon * 0.5, &coverage));
-      TEST_ASSERT_GREATER_THAN_UINT8(0, coverage);
-      TEST_ASSERT_LESS_THAN_UINT8(255, coverage);
-      return;
+void test_pixel_land_geometry_is_independent_of_elevation_grid(void) {
+  core::land_water::PixelView view;
+  TEST_ASSERT_TRUE(core::land_water::makePixelView(
+      52.3676, 4.9041, 80.0f, 240, &view));
+
+  bool differs_from_41 = false;
+  bool differs_from_61 = false;
+  for (int y = 0; y < view.size; ++y) {
+    for (int x = 0; x < view.size; ++x) {
+      bool direct_land = false;
+      TEST_ASSERT_TRUE(
+          core::land_water::classifyPixel(view, x, y, &direct_land));
+      differs_from_41 =
+          differs_from_41 ||
+          direct_land != nearestElevationGridLand(view, x, y, 41);
+      differs_from_61 =
+          differs_from_61 ||
+          direct_land != nearestElevationGridLand(view, x, y, 61);
+      if (differs_from_41 && differs_from_61) break;
     }
+    if (differs_from_41 && differs_from_61) break;
   }
-  TEST_FAIL_MESSAGE("regional mask contains no land/water edge");
+  TEST_ASSERT_TRUE_MESSAGE(
+      differs_from_41,
+      "direct pixel classification unexpectedly matches a 41x41 proxy");
+  TEST_ASSERT_TRUE_MESSAGE(
+      differs_from_61,
+      "direct pixel classification unexpectedly matches a 61x61 proxy");
 }
 
 void test_mask_coverage_is_regional_and_view_sized(void) {
@@ -637,16 +651,15 @@ void test_land_median_requires_land(void) {
   TEST_ASSERT_FALSE(ct::landMedianElevation(grid, &median));
 }
 
-void test_default_ranges_choose_deterministic_vertical_steps(void) {
-  const uint16_t expected[] = {5, 5, 10, 20, 50, 100};
-  TEST_ASSERT_EQUAL_UINT32(cs::kDefaultRangeCount,
+void test_fixed_ranges_choose_deterministic_vertical_steps(void) {
+  const uint16_t expected[] = {5, 10, 20, 50, 100};
+  TEST_ASSERT_EQUAL_UINT32(cs::kRangePresetCount,
                            sizeof(expected) / sizeof(expected[0]));
-  for (size_t i = 0; i < cs::kDefaultRangeCount; ++i) {
-    TEST_ASSERT_EQUAL_UINT16(
-        expected[i], ct::verticalStepForRangeKm(cs::kDefaultRangeKm[i]));
+  for (size_t i = 0; i < cs::kRangePresetCount; ++i) {
+    TEST_ASSERT_EQUAL_UINT16(expected[i],
+                             ct::verticalStepForRangeIndex(i));
   }
-  TEST_ASSERT_EQUAL_UINT16(200, ct::verticalStepForRangeKm(200));
-  TEST_ASSERT_EQUAL_UINT16(500, ct::verticalStepForRangeKm(500));
+  TEST_ASSERT_EQUAL_UINT16(100, ct::verticalStepForRangeIndex(99));
 }
 
 void test_local_relief_is_elevation_offset_invariant(void) {
@@ -712,7 +725,7 @@ int main(int, char**) {
   RUN_TEST(test_band_negative_elevation_is_not_inherently_water);
   RUN_TEST(test_explicit_land_mask_controls_painting);
   RUN_TEST(test_netherlands_mask_distinguishes_polder_and_water);
-  RUN_TEST(test_land_coverage_softens_compiled_mask_cell_edges);
+  RUN_TEST(test_pixel_land_geometry_is_independent_of_elevation_grid);
   RUN_TEST(test_mask_coverage_is_regional_and_view_sized);
   RUN_TEST(test_band_lowest);
   RUN_TEST(test_band_boundary_lands_in_higher_band);
@@ -720,7 +733,7 @@ int main(int, char**) {
   RUN_TEST(test_land_median_ignores_water);
   RUN_TEST(test_land_median_resists_elevation_outlier);
   RUN_TEST(test_land_median_requires_land);
-  RUN_TEST(test_default_ranges_choose_deterministic_vertical_steps);
+  RUN_TEST(test_fixed_ranges_choose_deterministic_vertical_steps);
   RUN_TEST(test_local_relief_is_elevation_offset_invariant);
   RUN_TEST(test_flat_lowland_and_plateau_share_the_centre_band);
 

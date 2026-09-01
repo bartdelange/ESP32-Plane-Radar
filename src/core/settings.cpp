@@ -16,6 +16,8 @@ namespace core::settings
 
     constexpr char kKeyRange[] = "rangeIdx";
     constexpr char kKeyRangePresets[] = "rangePresets";
+    constexpr char kKeyFixedRangeSchema[] = "fixedRangeV";
+    constexpr uint8_t kFixedRangeSchemaVersion = 1;
     /**
      * Deliberately not the old "useMiles" key. That one meant km-vs-statute-miles;
      * this one means NM-vs-km, so reusing it would silently invert the preference
@@ -34,8 +36,6 @@ namespace core::settings
     double s_lat = config::kDefaultRadarLat;
     double s_lon = config::kDefaultRadarLon;
     uint8_t s_range_index = kDefaultRangeIndex;
-    RangePreset s_range_presets[kMaxRangePresets] = {};
-    size_t s_range_count = 0;
     bool s_use_km = true;
     bool s_show_runways = true;
     bool s_show_terrain = true;
@@ -67,33 +67,13 @@ namespace core::settings
       }
     }
 
-    void setDefaultRanges()
+    uint8_t migrateLegacyRangeIndex(uint8_t old_index)
     {
-      s_range_count = kDefaultRangeCount;
-      for (size_t i = 0; i < s_range_count; ++i)
-      {
-        s_range_presets[i] = {kDefaultRangeKm[i],
-                              kDefaultRangeKm[i] * kRing3ToOuterKm};
-      }
-    }
-
-    void applyRanges(const uint16_t *values, size_t count, uint16_t old_active_km)
-    {
-      s_range_count = count;
-      for (size_t i = 0; i < count; ++i)
-      {
-        s_range_presets[i] = {values[i], values[i] * kRing3ToOuterKm};
-      }
-      size_t selected = count - 1;
-      for (size_t i = 0; i < count; ++i)
-      {
-        if (values[i] >= old_active_km)
-        {
-          selected = i;
-          break;
-        }
-      }
-      s_range_index = static_cast<uint8_t>(selected);
+      // Old defaults were 10,15,20,40,80,120 km. Preserve the nearest useful
+      // fixed view without ever parsing or applying the old configurable list.
+      constexpr uint8_t kOldToFixed[] = {0, 1, 1, 2, 3, 4};
+      return old_index < sizeof(kOldToFixed) ? kOldToFixed[old_index]
+                                             : kDefaultRangeIndex;
     }
 
   } // namespace
@@ -102,23 +82,17 @@ namespace core::settings
 
   void init()
   {
-    setDefaultRanges();
-    const std::string persisted =
-        KV::getString(kNsRadar, kKeyRangePresets, "");
-    uint16_t parsed[kMaxRangePresets] = {};
-    size_t parsed_count = 0;
-    if (!persisted.empty() &&
-        parseRangePresets(persisted.c_str(), parsed, kMaxRangePresets,
-                          &parsed_count))
+    uint8_t saved = KV::getU8(kNsRadar, kKeyRange, kDefaultRangeIndex);
+    if (KV::getU8(kNsRadar, kKeyFixedRangeSchema, 0) !=
+        kFixedRangeSchemaVersion)
     {
-      applyRanges(parsed, parsed_count, parsed[0]);
+      saved = migrateLegacyRangeIndex(saved);
+      KV::putU8(kNsRadar, kKeyRange, saved);
+      KV::putU8(kNsRadar, kKeyFixedRangeSchema, kFixedRangeSchemaVersion);
+      // Retire the old arbitrary list without touching any other setting.
+      KV::remove(kNsRadar, kKeyRangePresets);
     }
-    const uint8_t saved = KV::getU8(kNsRadar, kKeyRange, kDefaultRangeIndex);
-    s_range_index = saved < s_range_count
-                        ? saved
-                        : static_cast<uint8_t>(kDefaultRangeIndex < s_range_count
-                                                   ? kDefaultRangeIndex
-                                                   : 0);
+    s_range_index = saved < kRangePresetCount ? saved : kDefaultRangeIndex;
     s_use_km = KV::getBool(kNsRadar, kKeyKm, true);
     s_show_runways = KV::getBool(kNsRadar, kKeyRunways, true);
     s_show_terrain = KV::getBool(kNsRadar, kKeyTerrain, true);
@@ -181,64 +155,25 @@ namespace core::settings
 
   void rangeNext()
   {
-    s_range_index = static_cast<uint8_t>((s_range_index + 1) % s_range_count);
+    s_range_index =
+        static_cast<uint8_t>((s_range_index + 1) % kRangePresetCount);
     KV::putU8(kNsRadar, kKeyRange, s_range_index);
     if (s_range_changed_fn != nullptr)
       s_range_changed_fn();
   }
 
-  const RangePreset &rangeCurrent() { return s_range_presets[s_range_index]; }
+  const RangePreset &rangeCurrent() { return kRangePresets[s_range_index]; }
 
   const RangePreset &rangePreset(size_t index)
   {
-    return s_range_presets[index < s_range_count ? index : 0];
+    return kRangePresets[index < kRangePresetCount ? index : 0];
   }
 
-  size_t rangeCount() { return s_range_count; }
+  size_t rangeCount() { return kRangePresetCount; }
 
   uint8_t rangeIndex() { return s_range_index; }
 
   void setRangeChangedFn(RangeChangedFn fn) { s_range_changed_fn = fn; }
-
-  bool saveRangePresetsFromPortal(const char *value)
-  {
-    uint16_t parsed[kMaxRangePresets] = {};
-    size_t count = 0;
-    if (!parseRangePresets(value, parsed, kMaxRangePresets, &count))
-      return false;
-    const uint16_t old_active = rangeCurrent().ring3_km;
-    const uint8_t old_index = s_range_index;
-    applyRanges(parsed, count, old_active);
-    char persisted[48];
-    formatRangePresets(persisted, sizeof(persisted));
-    KV::putString(kNsRadar, kKeyRangePresets, persisted);
-    KV::putU8(kNsRadar, kKeyRange, s_range_index);
-    if (s_range_changed_fn != nullptr &&
-        (old_active != rangeCurrent().ring3_km || old_index != s_range_index))
-    {
-      s_range_changed_fn();
-    }
-    return true;
-  }
-
-  void formatRangePresets(char *buf, size_t len)
-  {
-    if (buf == nullptr || len == 0)
-      return;
-    size_t used = 0;
-    buf[0] = '\0';
-    for (size_t i = 0; i < s_range_count && used < len; ++i)
-    {
-      const int written = snprintf(buf + used, len - used, "%s%u", i ? "," : "",
-                                   static_cast<unsigned>(s_range_presets[i].ring3_km));
-      if (written < 0 || static_cast<size_t>(written) >= len - used)
-      {
-        buf[len - 1] = '\0';
-        return;
-      }
-      used += static_cast<size_t>(written);
-    }
-  }
 
   // --- Units and overlays ------------------------------------------------------
 
@@ -338,45 +273,6 @@ namespace core::settings
   void formatCurrentRing3Label(char *buf, size_t len)
   {
     formatRing3Label(buf, len, rangeCurrent().ring3_km, s_use_km);
-  }
-
-  bool parseRangePresets(const char *text, uint16_t *out, size_t capacity,
-                         size_t *count)
-  {
-    if (count != nullptr)
-      *count = 0;
-    if (text == nullptr || out == nullptr || count == nullptr || capacity == 0)
-      return false;
-    const char *p = text;
-    size_t n = 0;
-    uint16_t previous = 0;
-    while (true)
-    {
-      while (*p == ' ' || *p == '\t')
-        ++p;
-      if (*p < '0' || *p > '9' || n >= capacity || n >= kMaxRangePresets)
-        return false;
-      unsigned long value = 0;
-      while (*p >= '0' && *p <= '9')
-      {
-        value = value * 10 + static_cast<unsigned>(*p - '0');
-        if (value > kMaxRangeKm)
-          return false;
-        ++p;
-      }
-      while (*p == ' ' || *p == '\t')
-        ++p;
-      if (value == 0 || value <= previous)
-        return false;
-      out[n++] = static_cast<uint16_t>(value);
-      previous = static_cast<uint16_t>(value);
-      if (*p == '\0')
-        break;
-      if (*p++ != ',')
-        return false;
-    }
-    *count = n;
-    return true;
   }
 
 } // namespace core::settings

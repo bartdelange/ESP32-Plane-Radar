@@ -1,6 +1,5 @@
 #include "core/land_water.h"
 
-#include <cmath>
 #include <cstddef>
 
 #include "core/geo.h"
@@ -20,15 +19,6 @@ const data::land_mask::Region* regionAt(double lat, double lon) {
   return nullptr;
 }
 
-bool maskBit(const data::land_mask::Region& region, int row, int col) {
-  if (row < 0) row = 0;
-  if (col < 0) col = 0;
-  if (row >= region.height) row = region.height - 1;
-  if (col >= region.width) col = region.width - 1;
-  const size_t index = static_cast<size_t>(row) * region.width + col;
-  return (region.bits[index >> 3] & (1u << (index & 7))) != 0;
-}
-
 }  // namespace
 
 bool classify(double lat, double lon, bool* is_land) {
@@ -46,31 +36,22 @@ bool classify(double lat, double lon, bool* is_land) {
   return true;
 }
 
-bool coverage(double lat, double lon, uint8_t* land_coverage) {
-  if (land_coverage == nullptr) return false;
-  const auto* region = regionAt(lat, lon);
-  if (region == nullptr) return false;
-
-  // Coordinates address mask-cell centres. Interpolating the four surrounding
-  // binary cells removes the visible nearest-neighbour stair steps without
-  // allocating a screen-sized coverage bitmap.
-  const double x = (lon - region->west) * region->width /
-                       (region->east - region->west) -
-                   0.5;
-  const double y = (region->north - lat) * region->height /
-                       (region->north - region->south) -
-                   0.5;
-  const int x0 = static_cast<int>(std::floor(x));
-  const int y0 = static_cast<int>(std::floor(y));
-  const double fx = x - x0;
-  const double fy = y - y0;
-  const double north = maskBit(*region, y0, x0) * (1.0 - fx) +
-                       maskBit(*region, y0, x0 + 1) * fx;
-  const double south = maskBit(*region, y0 + 1, x0) * (1.0 - fx) +
-                       maskBit(*region, y0 + 1, x0 + 1) * fx;
-  const double value = north * (1.0 - fy) + south * fy;
-  *land_coverage = static_cast<uint8_t>(value * 255.0 + 0.5);
+bool makePixelView(double center_lat, double center_lon, float half_span_km,
+                   int size, PixelView* view) {
+  if (view == nullptr || size < 2 || half_span_km <= 0.0f) return false;
+  const double half_span_deg =
+      static_cast<double>(half_span_km) / core::geo::kKmPerDeg;
+  view->north_lat = center_lat + half_span_deg;
+  view->west_lon = center_lon - half_span_deg;
+  view->degrees_per_pixel = 2.0 * half_span_deg / (size - 1);
+  view->size = size;
   return true;
+}
+
+bool classifyPixel(const PixelView& view, int x, int y, bool* is_land) {
+  if (x < 0 || x >= view.size || y < 0 || y >= view.size) return false;
+  return classify(view.north_lat - y * view.degrees_per_pixel,
+                  view.west_lon + x * view.degrees_per_pixel, is_land);
 }
 
 bool coversView(double center_lat, double center_lon, float half_span_km) {

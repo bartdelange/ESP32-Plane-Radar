@@ -38,11 +38,15 @@ struct RangePreset {
 
 constexpr float kRing3ToOuterKm = 4.0f / 3.0f;
 constexpr float kKmPerNauticalMile = 1.852f;
-constexpr size_t kMaxRangePresets = 8;
-constexpr uint16_t kMaxRangeKm = 500;
-constexpr uint16_t kDefaultRangeKm[] = {10, 15, 20, 40, 80, 120};
-constexpr size_t kDefaultRangeCount =
-    sizeof(kDefaultRangeKm) / sizeof(kDefaultRangeKm[0]);
+constexpr RangePreset kRangePresets[] = {
+    {10, 10 * kRing3ToOuterKm},
+    {20, 20 * kRing3ToOuterKm},
+    {40, 40 * kRing3ToOuterKm},
+    {80, 80 * kRing3ToOuterKm},
+    {160, 160 * kRing3ToOuterKm},
+};
+constexpr size_t kRangePresetCount =
+    sizeof(kRangePresets) / sizeof(kRangePresets[0]);
 
 /**
  * Storage namespace. The name and its keys are frozen — changing either would
@@ -94,10 +98,6 @@ uint8_t rangeIndex();
 using RangeChangedFn = void (*)();
 void setRangeChangedFn(RangeChangedFn fn);
 
-/** Validate, persist, and apply a comma-separated list of integer kilometres. */
-bool saveRangePresetsFromPortal(const char* value);
-void formatRangePresets(char* buf, size_t len);
-
 // --- Units and overlays ------------------------------------------------------
 
 /** True (the default) means kilometres; false means nautical miles. */
@@ -143,9 +143,5 @@ void formatRing3Label(char* buf, size_t len, float ring3_km, bool use_km);
 
 /** formatRing3Label for the active preset and unit setting. */
 void formatCurrentRing3Label(char* buf, size_t len);
-
-/** Strict parser used by portal saves and persisted-data validation. */
-bool parseRangePresets(const char* text, uint16_t* out, size_t capacity,
-                       size_t* count);
 
 }  // namespace core::settings

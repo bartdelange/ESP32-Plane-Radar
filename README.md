@@ -17,9 +17,9 @@ After Wi‑Fi is saved, the device reconnects automatically; the radar runs in t
 
 | Action | Effect |
 |--------|--------|
-| **Short tap** | Cycle the configured range presets (default 10 → 15 → 20 → 40 → 80 → 120 km → 10); the active range is persisted. Refreshes aircraft within ~1 s so a wider fetch radius fills promptly |
+| **Short tap** | Cycle the fixed range presets (10 → 20 → 40 → 80 → 160 km → 10); the active range is persisted. Refreshes aircraft within ~1 s so a wider fetch radius fills promptly |
 | **Double tap** | Toggle the STA-only configuration server without disconnecting Wi-Fi or starting the setup AP |
-| **Hold 3 s** | Clear Wi‑Fi and Current Location, reset units, airline-label choice, and overlay toggles, then reboot into setup; configured ranges remain |
+| **Hold 3 s** | Clear Wi‑Fi and Current Location, reset units, airline-label choice, and overlay toggles, then reboot into setup; the active range remains |
 
 During setup you can also hold BOOT at power-on to force a credential reset (same as the long press).
 
@@ -35,7 +35,7 @@ During setup you can also hold BOOT at power-on to force a credential reset (sam
 
 1. While the radar is connected, double tap BOOT to enable the LAN settings server
 2. Open **`http://plane-radar.local/`** or the device IP shown in the serial log
-3. Change Wi-Fi, location, range presets, units, airline labels, or runway overlay; save
+3. Change Wi-Fi, location, units, airline labels, or runway overlay; save
 4. Double tap BOOT again when finished to release the server resources
 
 Normal radar mode does not allocate the configuration server. Double tap BOOT to enable the existing configuration UI over the STA interface at the device IP (and `plane-radar.local` when mDNS is available); double tap again to stop it. This never starts the setup AP. If Wi-Fi disconnects, the server is stopped and stays off after reconnect. Radar-setting changes are applied without rebooting.
@@ -45,7 +45,6 @@ Normal radar mode does not allocate the configuration server. Double tap BOOT to
 | Field | Purpose |
 |-------|---------|
 | **Current Location** | Latitude and longitude of the radar device; this is always the radar centre |
-| **Radar range presets** | Strictly ascending comma-separated ring-3 distances in km, for example `10,15,20,40,80,120` |
 | **Display distances in km** | Ring scale label in **km** by default; clear it to use **NM** (e.g. `40km` vs `22NM`) |
 | **Airline labels** | Hide airline labels, show the local friendly abbreviation, or show the full operator name (route data first, local table as fallback) |
 | **Show airport runways** | Major-airport runway overlay on the radar (off to hide) |
@@ -114,7 +113,7 @@ Layout and colors: `include/ui/radar_theme.h`.
 ### Terrain
 
 - First use for a location/range downloads the required 1–4 AWS Terrarium PNG tiles before live ADS-B polling begins.
-- Tiles are staged in LittleFS, TLS is closed, and the low-memory decoder builds a 41×41 elevation grid with the generated regional land/water mask. PNG staging is deleted after each decode.
+- Tiles are staged in LittleFS, TLS is closed, and the low-memory decoder builds a 61×61 elevation grid with the generated regional land/water mask. PNG staging is deleted after each decode.
 - The final decoded grid and land bitset are stored as one checksummed binary cache. Later boots with exactly the same center, range index and terrain span load it without terrain HTTP/TLS/PNG work.
 - Location or range changes synchronously load or rebuild terrain before ADS-B resumes with the new fetch radius. A rebuild closes the optional LAN settings server so its WebServer cannot compete for heap.
 - Failure is non-fatal: the normal background is used and ADS-B starts normally. Terrain is not retried from the live ADS-B loop; another attempt occurs on a later boot or view change.
@@ -125,15 +124,14 @@ Layout and colors: `include/ui/radar_theme.h`.
 | Ring 3 label | Outer radius (aircraft scale) | ADS-B fetch radius |
 |------------|-------------------------------|--------------------|
 | 5 NM / 10 km | ~7 NM (13 km) | ~8 NM (14 km) |
-| 8 NM / 15 km (default) | ~11 NM (20 km) | ~12 NM (22 km) |
-| 11 NM / 20 km | ~14 NM (27 km) | ~16 NM (29 km) |
+| 11 NM / 20 km (default) | ~14 NM (27 km) | ~16 NM (29 km) |
 | 22 NM / 40 km | ~29 NM (53 km) | ~31 NM (58 km) |
 | 43 NM / 80 km | ~58 NM (107 km) | ~62 NM (116 km) |
-| 65 NM / 120 km | ~86 NM (160 km) | ~94 NM (173 km) |
+| 86 NM / 160 km | ~115 NM (213 km) | ~128 NM (237 km) |
 
-The preset list, active preset, and NM/km choice persist across reboot. Lists
-must contain 1–8 unique, strictly ascending integer values from 1–500 km;
-malformed saved data falls back to the defaults.
+The preset list is fixed at compile time. The active preset and NM/km choice
+persist across reboot. Legacy configurable preset values are ignored and
+removed automatically without affecting other saved settings.
 
 ### Runways
 
@@ -178,7 +176,7 @@ Edit **`include/config.h`** for hardware and behavior:
 | Routes/tracks | `kRouteLookupsPerCycle`, `kRouteCacheSize`, route TTLs, `kTrackHistoryDepth`, `kTrackHistoryMax`, `kTrackHistoryTtlMs`, `kTagCycleIntervalMs` |
 | Terrain | `kTerrainGridSize`, tile URL, request timeout and tile interval |
 
-Default range presets and validation limits live in `include/core/settings.h`.
+Fixed range presets live in `include/core/settings.h`.
 
 ## Project layout
 

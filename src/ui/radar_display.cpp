@@ -173,7 +173,10 @@ void initLabelMetrics() {
   char label[12];
   for (bool miles : {false, true}) {
     radar::formatRing3Label(label, sizeof(label),
-                            core::settings::kMaxRangeKm, miles);
+                            core::settings::kRangePresets[
+                                core::settings::kRangePresetCount - 1]
+                                .ring3_km,
+                            miles);
     const int w = tft.textWidth(label);
     if (w > s_scale_label_max_w) {
       s_scale_label_max_w = w;

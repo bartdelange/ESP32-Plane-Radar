@@ -176,8 +176,8 @@ int bandForSample(int16_t elev_m, bool is_land, const int16_t* band_min_m,
 /** Exact median of LAND elevations, found with constant working memory. */
 bool landMedianElevation(const Grid& grid, int16_t* median_m);
 
-/** Deterministic vertical metres per color band for a ring-3 range in km. */
-uint16_t verticalStepForRangeKm(uint16_t ring3_km);
+/** Explicit vertical metres per color band for a fixed radar range index. */
+uint16_t verticalStepForRangeIndex(uint8_t range_index);
 
 /** Seven (or another odd count) floors centred on reference_m. */
 bool localReliefBandFloors(int16_t reference_m, uint16_t step_m,

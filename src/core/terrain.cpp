@@ -525,7 +525,7 @@ bool ensureGrid(double center_lat, double center_lon, uint8_t range_index,
   if (gridReady(center_lat, center_lon, range_index)) {
     return true;
   }
-  if (range_index >= core::settings::kMaxRangePresets ||
+  if (range_index >= core::settings::kRangePresetCount ||
       s_png_decode == nullptr) {
     return false;
   }
@@ -712,14 +712,13 @@ bool landMedianElevation(const Grid& grid, int16_t* median_m) {
   return true;
 }
 
-uint16_t verticalStepForRangeKm(uint16_t ring3_km) {
-  if (ring3_km <= 15) return 5;
-  if (ring3_km <= 25) return 10;
-  if (ring3_km <= 50) return 20;
-  if (ring3_km <= 100) return 50;
-  if (ring3_km <= 150) return 100;
-  if (ring3_km <= 300) return 200;
-  return 500;
+uint16_t verticalStepForRangeIndex(uint8_t range_index) {
+  constexpr uint16_t kStepM[] = {5, 10, 20, 50, 100};
+  static_assert(sizeof(kStepM) / sizeof(kStepM[0]) ==
+                core::settings::kRangePresetCount);
+  return kStepM[range_index < core::settings::kRangePresetCount
+                    ? range_index
+                    : core::settings::kRangePresetCount - 1];
 }
 
 bool localReliefBandFloors(int16_t reference_m, uint16_t step_m,

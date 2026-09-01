@@ -46,9 +46,6 @@ inline void saveTerrainFromPortal(const char* v) {
 inline void saveAirlineDisplayFromPortal(const char* v) {
   core::settings::saveAirlineDisplayFromPortal(v);
 }
-inline bool saveRangePresetsFromPortal(const char* v) {
-  return core::settings::saveRangePresetsFromPortal(v);
-}
 inline void unitsReset() { core::settings::unitsReset(); }
 
 inline void formatRing3Label(char* buf, size_t len, float ring3_km,
