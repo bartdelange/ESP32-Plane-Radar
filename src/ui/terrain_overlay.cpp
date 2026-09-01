@@ -9,6 +9,10 @@
 
 #include "ui/terrain_overlay.h"
 
+#include <algorithm>
+
+#include "core/geo.h"
+#include "core/land_water.h"
 #include "core/settings.h"
 #include "core/terrain.h"
 #include "ui/radar_range.h"
@@ -62,21 +66,43 @@ void initPixelToGridMap() {
   s_map_ready = true;
 }
 
-int bandAtPixel(const core::terrain::Grid& grid, const int32_t* row_elev,
-                int grid_row, int x) {
+uint16_t blend565(uint16_t water, uint16_t land, uint8_t land_coverage) {
+  if (land_coverage == 0) return water;
+  if (land_coverage == 255) return land;
+  const uint16_t water_weight = 255 - land_coverage;
+  const uint16_t r = (((water >> 11) & 0x1F) * water_weight +
+                      ((land >> 11) & 0x1F) * land_coverage + 127) /
+                     255;
+  const uint16_t g = (((water >> 5) & 0x3F) * water_weight +
+                      ((land >> 5) & 0x3F) * land_coverage + 127) /
+                     255;
+  const uint16_t b = ((water & 0x1F) * water_weight +
+                      (land & 0x1F) * land_coverage + 127) /
+                     255;
+  return static_cast<uint16_t>((r << 11) | (g << 5) | b);
+}
+
+uint16_t colorAtPixel(const int32_t* row_elev, int x, double lat,
+                      double lon) {
+  uint8_t land_coverage = 0;
+  if (!core::land_water::coverage(lat, lon, &land_coverage) ||
+      land_coverage == 0) {
+    return radar::kColorBackground;
+  }
   const int c = s_cell[x];
   const int32_t west = row_elev[c];
   const int32_t elev_m =
       west + (((row_elev[c + 1] - west) * s_frac[x]) >> kFracBits);
-  const int nearest_col = c + (s_frac[x] >= kFracOne / 2 ? 1 : 0);
-  return core::terrain::bandForSample(
-      static_cast<int16_t>(elev_m),
-      core::terrain::isLand(grid, grid_row, nearest_col),
-      s_band_min_m, radar::kTerrainBandCount);
+  const int band = std::max(
+      0, core::terrain::bandForElevation(static_cast<int16_t>(elev_m),
+                                         s_band_min_m,
+                                         radar::kTerrainBandCount));
+  return blend565(radar::kColorBackground, radar::kColorTerrain[band],
+                  land_coverage);
 }
 
 void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
-                  int y) {
+                  int y, double lat, double west_lon, double pixel_deg) {
   // The row weight is constant across the scanline: blend the two bracketing
   // grid rows into one kGrid-entry row up front so the per-pixel work is a
   // single horizontal lerp. Whole metres keep both lerps inside int32 for any
@@ -91,29 +117,22 @@ void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
     row_elev[c] = n + (((static_cast<int32_t>(south[c]) - n) * wy) >> kFracBits);
   }
 
-  // Neighbouring pixels almost always fall in the same band, so runs are
-  // coalesced into one drawFastHLine each instead of 240 drawPixel calls.
-  // Band -1 (explicit water, or elevation outside the palette) draws nothing:
-  // the plain background fill underneath stays visible.
+  // Neighbouring pixels usually share a final blended color, so coalesce them
+  // into horizontal runs. Land coverage comes directly from the higher-
+  // resolution compiled regional mask, not the nearest elevation-grid sample.
   int run_start = 0;
-  const int nearest_row = r + (wy >= kFracOne / 2 ? 1 : 0);
-  int run_band = bandAtPixel(grid, row_elev, nearest_row, 0);
+  uint16_t run_color = colorAtPixel(row_elev, 0, lat, west_lon);
   for (int x = 1; x < radar::kSize; ++x) {
-    const int band = bandAtPixel(grid, row_elev, nearest_row, x);
-    if (band == run_band) {
+    const uint16_t color =
+        colorAtPixel(row_elev, x, lat, west_lon + x * pixel_deg);
+    if (color == run_color) {
       continue;
     }
-    if (run_band >= 0) {
-      gfx.drawFastHLine(run_start, y, x - run_start,
-                        radar::kColorTerrain[run_band]);
-    }
+    gfx.drawFastHLine(run_start, y, x - run_start, run_color);
     run_start = x;
-    run_band = band;
+    run_color = color;
   }
-  if (run_band >= 0) {
-    gfx.drawFastHLine(run_start, y, radar::kSize - run_start,
-                      radar::kColorTerrain[run_band]);
-  }
+  gfx.drawFastHLine(run_start, y, radar::kSize - run_start, run_color);
 }
 
 }  // namespace
@@ -132,17 +151,27 @@ void drawTerrainBackground(lgfx::LGFXBase& gfx) {
   if (grid == nullptr) {
     return;
   }
-  if (!core::terrain::adaptiveBandFloors(
-          *grid, s_band_min_m, radar::kTerrainBandCount,
-          radar::kTerrainMinBandIntervalM)) {
+  int16_t reference_m = 0;
+  if (!core::terrain::landMedianElevation(*grid, &reference_m) ||
+      !core::terrain::localReliefBandFloors(
+          reference_m,
+          core::terrain::verticalStepForRangeKm(
+              core::settings::rangeCurrent().ring3_km),
+          s_band_min_m, radar::kTerrainBandCount)) {
     return;
   }
 
   initPixelToGridMap();
+  const double half_span_deg =
+      static_cast<double>(grid->half_span_km) / core::geo::kKmPerDeg;
+  const double pixel_deg = 2.0 * half_span_deg / (radar::kSize - 1);
+  const double north_lat = grid->center_lat + half_span_deg;
+  const double west_lon = grid->center_lon - half_span_deg;
   // Grid row 0 is the north edge and column 0 the west edge, matching screen
   // y/x directly, so scanlines sample the grid without any axis flip.
   for (int y = 0; y < radar::kSize; ++y) {
-    drawScanline(gfx, *grid, y);
+    drawScanline(gfx, *grid, y, north_lat - y * pixel_deg, west_lon,
+                 pixel_deg);
   }
 }
 

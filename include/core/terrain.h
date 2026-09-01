@@ -173,15 +173,14 @@ int bandForElevation(int16_t elev_m, const int16_t* band_min_m,
 int bandForSample(int16_t elev_m, bool is_land, const int16_t* band_min_m,
                   int band_count);
 
-/**
- * Build ascending elevation-band floors from this grid's LAND samples.
- * Water never influences the range. Spacing is rounded up to a readable
- * 1/2/5 step and never falls below min_interval_m, so low-relief terrain
- * remains visible without amplifying metre-scale noise.
- *
- * Returns false when there are no land samples or the output is invalid.
- */
-bool adaptiveBandFloors(const Grid& grid, int16_t* band_min_m, int band_count,
-                        int16_t min_interval_m);
+/** Exact median of LAND elevations, found with constant working memory. */
+bool landMedianElevation(const Grid& grid, int16_t* median_m);
+
+/** Deterministic vertical metres per color band for a ring-3 range in km. */
+uint16_t verticalStepForRangeKm(uint16_t ring3_km);
+
+/** Seven (or another odd count) floors centred on reference_m. */
+bool localReliefBandFloors(int16_t reference_m, uint16_t step_m,
+                           int16_t* band_min_m, int band_count);
 
 }  // namespace core::terrain

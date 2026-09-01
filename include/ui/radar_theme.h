@@ -112,7 +112,6 @@ constexpr uint8_t kRunwayLabelG = 210;
 constexpr uint8_t kRunwayLabelB = 230;
 
 constexpr int kTerrainBandCount = 7;
-constexpr int16_t kTerrainMinBandIntervalM = 5;
 constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8, 12, 16, 22, 30, 40, 52};
 constexpr uint8_t kTerrainBandG[kTerrainBandCount] = {34, 46, 60, 74, 88, 104,
                                                       122};

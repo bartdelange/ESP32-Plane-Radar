@@ -27,10 +27,12 @@
 
 #include "config.h"
 #include "core/land_water.h"
+#include "core/region_pack.h"
 #include "core/settings.h"
 #include "core/terrain.h"
 
 namespace ct = core::terrain;
+namespace cs = core::settings;
 
 namespace {
 
@@ -546,6 +548,33 @@ void test_netherlands_mask_distinguishes_polder_and_water(void) {
   TEST_ASSERT_FALSE_MESSAGE(land, "Markermeer must be classified as water");
 }
 
+void test_land_coverage_softens_compiled_mask_cell_edges(void) {
+  namespace rp = data::region_pack;
+  const double cell_lon = (rp::kEast - rp::kWest) / rp::kMaskWidth;
+  const double cell_lat = (rp::kNorth - rp::kSouth) / rp::kMaskHeight;
+  for (int row = 0; row < rp::kMaskHeight; ++row) {
+    const double lat = rp::kNorth - (row + 0.5) * cell_lat;
+    for (int col = 0; col + 1 < rp::kMaskWidth; ++col) {
+      const double west_center = rp::kWest + (col + 0.5) * cell_lon;
+      bool west_land = false;
+      bool east_land = false;
+      TEST_ASSERT_TRUE(core::land_water::classify(lat, west_center,
+                                                   &west_land));
+      TEST_ASSERT_TRUE(core::land_water::classify(
+          lat, west_center + cell_lon, &east_land));
+      if (west_land == east_land) continue;
+
+      uint8_t coverage = 0;
+      TEST_ASSERT_TRUE(core::land_water::coverage(
+          lat, west_center + cell_lon * 0.5, &coverage));
+      TEST_ASSERT_GREATER_THAN_UINT8(0, coverage);
+      TEST_ASSERT_LESS_THAN_UINT8(255, coverage);
+      return;
+    }
+  }
+  TEST_FAIL_MESSAGE("regional mask contains no land/water edge");
+}
+
 void test_mask_coverage_is_regional_and_view_sized(void) {
   TEST_ASSERT_TRUE(core::land_water::coversView(52.3676, 4.9041, 198.0f));
   TEST_ASSERT_FALSE(core::land_water::coversView(47.0753, 15.4062, 40.0f));
@@ -575,35 +604,74 @@ void setLandSample(ct::Grid* grid, int row, int col, int16_t elev_m) {
   grid->elev_m[index] = elev_m;
 }
 
-void test_adaptive_bands_ignore_water_and_keep_lowland_detail(void) {
+void test_land_median_ignores_water(void) {
   ct::Grid grid;
-  // These extreme water elevations must not flatten the useful land range.
+  // These extreme water elevations must not move the land reference.
   grid.elev_m[0] = -1000;
   grid.elev_m[1] = 3000;
-  setLandSample(&grid, 1, 1, -5);
-  setLandSample(&grid, 1, 2, 19);
+  setLandSample(&grid, 1, 1, 10);
+  setLandSample(&grid, 1, 2, 20);
+  setLandSample(&grid, 1, 3, 30);
 
-  int16_t floors[7];
-  TEST_ASSERT_TRUE(ct::adaptiveBandFloors(grid, floors, 7, 5));
-  const int16_t expected[] = {-5, 0, 5, 10, 15, 20, 25};
-  TEST_ASSERT_EQUAL_INT16_ARRAY(expected, floors, 7);
+  int16_t median = 0;
+  TEST_ASSERT_TRUE(ct::landMedianElevation(grid, &median));
+  TEST_ASSERT_EQUAL_INT16(20, median);
 }
 
-void test_adaptive_bands_use_sensible_mountain_spacing(void) {
+void test_land_median_resists_elevation_outlier(void) {
   ct::Grid grid;
-  setLandSample(&grid, 2, 2, 200);
-  setLandSample(&grid, 3, 3, 3200);
+  setLandSample(&grid, 2, 1, 10);
+  setLandSample(&grid, 2, 2, 11);
+  setLandSample(&grid, 2, 3, 12);
+  setLandSample(&grid, 2, 4, 13);
+  setLandSample(&grid, 2, 5, 30000);
 
-  int16_t floors[7];
-  TEST_ASSERT_TRUE(ct::adaptiveBandFloors(grid, floors, 7, 5));
-  const int16_t expected[] = {200, 700, 1200, 1700, 2200, 2700, 3200};
-  TEST_ASSERT_EQUAL_INT16_ARRAY(expected, floors, 7);
+  int16_t median = 0;
+  TEST_ASSERT_TRUE(ct::landMedianElevation(grid, &median));
+  TEST_ASSERT_EQUAL_INT16(12, median);
 }
 
-void test_adaptive_bands_require_land(void) {
+void test_land_median_requires_land(void) {
   ct::Grid grid;
-  int16_t floors[7];
-  TEST_ASSERT_FALSE(ct::adaptiveBandFloors(grid, floors, 7, 5));
+  int16_t median = 0;
+  TEST_ASSERT_FALSE(ct::landMedianElevation(grid, &median));
+}
+
+void test_default_ranges_choose_deterministic_vertical_steps(void) {
+  const uint16_t expected[] = {5, 5, 10, 20, 50, 100};
+  TEST_ASSERT_EQUAL_UINT32(cs::kDefaultRangeCount,
+                           sizeof(expected) / sizeof(expected[0]));
+  for (size_t i = 0; i < cs::kDefaultRangeCount; ++i) {
+    TEST_ASSERT_EQUAL_UINT16(
+        expected[i], ct::verticalStepForRangeKm(cs::kDefaultRangeKm[i]));
+  }
+  TEST_ASSERT_EQUAL_UINT16(200, ct::verticalStepForRangeKm(200));
+  TEST_ASSERT_EQUAL_UINT16(500, ct::verticalStepForRangeKm(500));
+}
+
+void test_local_relief_is_elevation_offset_invariant(void) {
+  int16_t low_floors[7];
+  int16_t high_floors[7];
+  TEST_ASSERT_TRUE(ct::localReliefBandFloors(2, 5, low_floors, 7));
+  TEST_ASSERT_TRUE(ct::localReliefBandFloors(1002, 5, high_floors, 7));
+  for (int i = 0; i < 7; ++i) {
+    TEST_ASSERT_EQUAL_INT16(low_floors[i] + 1000, high_floors[i]);
+  }
+  for (int16_t elev = -13; elev <= 17; ++elev) {
+    TEST_ASSERT_EQUAL_INT(
+        ct::bandForElevation(elev, low_floors, 7),
+        ct::bandForElevation(elev + 1000, high_floors, 7));
+  }
+}
+
+void test_flat_lowland_and_plateau_share_the_centre_band(void) {
+  int16_t lowland[7];
+  int16_t plateau[7];
+  TEST_ASSERT_TRUE(ct::localReliefBandFloors(2, 5, lowland, 7));
+  TEST_ASSERT_TRUE(ct::localReliefBandFloors(1000, 5, plateau, 7));
+  TEST_ASSERT_EQUAL_INT(3, ct::bandForElevation(2, lowland, 7));
+  TEST_ASSERT_EQUAL_INT(3, ct::bandForElevation(1000, plateau, 7));
+  TEST_ASSERT_EQUAL_INT(2, ct::bandForElevation(-3, lowland, 7));
 }
 
 void setUp(void) {}
@@ -644,13 +712,17 @@ int main(int, char**) {
   RUN_TEST(test_band_negative_elevation_is_not_inherently_water);
   RUN_TEST(test_explicit_land_mask_controls_painting);
   RUN_TEST(test_netherlands_mask_distinguishes_polder_and_water);
+  RUN_TEST(test_land_coverage_softens_compiled_mask_cell_edges);
   RUN_TEST(test_mask_coverage_is_regional_and_view_sized);
   RUN_TEST(test_band_lowest);
   RUN_TEST(test_band_boundary_lands_in_higher_band);
   RUN_TEST(test_band_top_is_open_ended);
-  RUN_TEST(test_adaptive_bands_ignore_water_and_keep_lowland_detail);
-  RUN_TEST(test_adaptive_bands_use_sensible_mountain_spacing);
-  RUN_TEST(test_adaptive_bands_require_land);
+  RUN_TEST(test_land_median_ignores_water);
+  RUN_TEST(test_land_median_resists_elevation_outlier);
+  RUN_TEST(test_land_median_requires_land);
+  RUN_TEST(test_default_ranges_choose_deterministic_vertical_steps);
+  RUN_TEST(test_local_relief_is_elevation_offset_invariant);
+  RUN_TEST(test_flat_lowland_and_plateau_share_the_centre_band);
 
   return UNITY_END();
 }

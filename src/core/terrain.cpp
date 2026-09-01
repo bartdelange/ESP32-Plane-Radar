@@ -675,50 +675,66 @@ int bandForSample(int16_t elev_m, bool is_land,
   return is_land ? bandForElevation(elev_m, band_min_m, band_count) : -1;
 }
 
-bool adaptiveBandFloors(const Grid& grid, int16_t* band_min_m, int band_count,
-                        int16_t min_interval_m) {
-  if (band_min_m == nullptr || band_count <= 0 || min_interval_m <= 0) {
-    return false;
-  }
-
-  int32_t min_m = INT16_MAX;
-  int32_t max_m = INT16_MIN;
+bool landMedianElevation(const Grid& grid, int16_t* median_m) {
+  if (median_m == nullptr) return false;
+  int land_count = 0;
   for (int row = 0; row < kGridSize; ++row) {
     for (int col = 0; col < kGridSize; ++col) {
-      if (!isLand(grid, row, col)) continue;
-      const int32_t elev_m = grid.elev_m[row * kGridSize + col];
-      if (elev_m < min_m) min_m = elev_m;
-      if (elev_m > max_m) max_m = elev_m;
+      if (isLand(grid, row, col)) ++land_count;
     }
   }
-  if (min_m > max_m) return false;
+  if (land_count == 0) return false;
 
-  int32_t interval = min_interval_m;
-  if (band_count > 1) {
-    const int32_t range_m = max_m - min_m;
-    const int32_t raw = (range_m + band_count - 2) / (band_count - 1);
-    if (raw > interval) interval = raw;
+  // Find the lower median in the int16 value domain. Sixteen passes over the
+  // compact grid are cheap during a static rebuild and avoid placing a 7.4 KiB
+  // sample array on loopTask's stack (or allocating one from its scarce heap).
+  const int target = (land_count - 1) / 2;
+  int32_t lo = INT16_MIN;
+  int32_t hi = INT16_MAX;
+  while (lo < hi) {
+    const int32_t mid = lo + (hi - lo) / 2;
+    int at_or_below = 0;
+    for (int row = 0; row < kGridSize; ++row) {
+      for (int col = 0; col < kGridSize; ++col) {
+        if (isLand(grid, row, col) &&
+            grid.elev_m[row * kGridSize + col] <= mid) {
+          ++at_or_below;
+        }
+      }
+    }
+    if (at_or_below > target) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
   }
+  *median_m = static_cast<int16_t>(lo);
+  return true;
+}
 
-  // Round upward to a cartographic 1/2/5 x 10^n step. Besides making the
-  // thresholds stable and understandable, this avoids reacting strongly to a
-  // one-metre change in the most extreme grid sample.
-  int32_t magnitude = 1;
-  while (interval > 10 * magnitude) magnitude *= 10;
-  if (interval <= magnitude) {
-    interval = magnitude;
-  } else if (interval <= 2 * magnitude) {
-    interval = 2 * magnitude;
-  } else if (interval <= 5 * magnitude) {
-    interval = 5 * magnitude;
-  } else {
-    interval = 10 * magnitude;
+uint16_t verticalStepForRangeKm(uint16_t ring3_km) {
+  if (ring3_km <= 15) return 5;
+  if (ring3_km <= 25) return 10;
+  if (ring3_km <= 50) return 20;
+  if (ring3_km <= 100) return 50;
+  if (ring3_km <= 150) return 100;
+  if (ring3_km <= 300) return 200;
+  return 500;
+}
+
+bool localReliefBandFloors(int16_t reference_m, uint16_t step_m,
+                           int16_t* band_min_m, int band_count) {
+  if (band_min_m == nullptr || band_count <= 0 || (band_count & 1) == 0 ||
+      step_m == 0) {
+    return false;
   }
-
+  const int centre = band_count / 2;
   for (int i = 0; i < band_count; ++i) {
-    const int32_t floor_m = min_m + i * interval;
+    const int32_t floor_m =
+        static_cast<int32_t>(reference_m) + (i - centre) * step_m;
     band_min_m[i] = static_cast<int16_t>(
-        floor_m > INT16_MAX ? INT16_MAX : floor_m);
+        floor_m < INT16_MIN ? INT16_MIN
+                            : (floor_m > INT16_MAX ? INT16_MAX : floor_m));
   }
   return true;
 }
