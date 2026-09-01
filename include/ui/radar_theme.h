@@ -112,10 +112,14 @@ constexpr uint8_t kRunwayLabelG = 210;
 constexpr uint8_t kRunwayLabelB = 230;
 
 constexpr int kTerrainBandCount = 7;
-constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8, 12, 16, 22, 30, 40, 52};
-constexpr uint8_t kTerrainBandG[kTerrainBandCount] = {34, 46, 60, 74, 88, 104,
-                                                      122};
-constexpr uint8_t kTerrainBandB[kTerrainBandCount] = {18, 22, 26, 30, 36, 44, 54};
+// Deliberately aligned to RGB565 quantization steps (R/B: 8, G: 4). Relief
+// should read through restrained luminance changes, never as a categorical
+// topographic palette competing with the radar symbology.
+constexpr uint8_t kTerrainBandR[kTerrainBandCount] = {8, 8, 16, 16, 24, 40, 56};
+constexpr uint8_t kTerrainBandG[kTerrainBandCount] = {20, 28, 36, 44, 48, 52,
+                                                      56};
+constexpr uint8_t kTerrainBandB[kTerrainBandCount] = {16, 16, 24, 24, 24, 24,
+                                                      40};
 
 extern uint16_t kColorBackground;
 extern uint16_t kColorGrid;

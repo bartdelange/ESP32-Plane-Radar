@@ -4,6 +4,7 @@
 #include "core/land_water.h"
 #include "core/settings.h"
 #include "core/terrain.h"
+#include "ui/radar_theme.h"
 
 namespace ct = core::terrain;
 void setUp() { ct::clear(); }
@@ -72,6 +73,26 @@ void test_local_relief_floors_support_negative_land(void) {
   TEST_ASSERT_EQUAL_INT16_ARRAY(expected, floors, 7);
 }
 
+constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
+  return static_cast<uint16_t>(((r & 0xF8u) << 8) |
+                               ((g & 0xFCu) << 3) | (b >> 3));
+}
+
+void test_terrain_palette_is_dark_and_rgb565_distinct(void) {
+  constexpr uint16_t expected[] = {0x08A2, 0x08E2, 0x1123, 0x1163,
+                                   0x1983, 0x29A3, 0x39C5};
+  for (int i = 0; i < ui::radar::kTerrainBandCount; ++i) {
+    const uint16_t actual = rgb565(ui::radar::kTerrainBandR[i],
+                                   ui::radar::kTerrainBandG[i],
+                                   ui::radar::kTerrainBandB[i]);
+    TEST_ASSERT_EQUAL_HEX16(expected[i], actual);
+    if (i > 0) TEST_ASSERT_NOT_EQUAL(expected[i - 1], actual);
+  }
+  // Water stays the existing blue-black background, below every land shade.
+  TEST_ASSERT_EQUAL_HEX16(0x0043,
+      rgb565(ui::radar::kBgR, ui::radar::kBgG, ui::radar::kBgB));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_copernicus_known_water_and_land);
@@ -81,5 +102,6 @@ int main(int, char**) {
   RUN_TEST(test_active_grid_does_not_change_water_geometry);
   RUN_TEST(test_fixed_range_relief_steps);
   RUN_TEST(test_local_relief_floors_support_negative_land);
+  RUN_TEST(test_terrain_palette_is_dark_and_rgb565_distinct);
   return UNITY_END();
 }
