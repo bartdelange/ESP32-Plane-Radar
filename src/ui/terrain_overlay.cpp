@@ -39,6 +39,7 @@ constexpr int32_t kFracOne = 1 << kFracBits;
 int s_cell[radar::kSize];
 int32_t s_frac[radar::kSize];  ///< 0..kFracOne
 bool s_map_ready = false;
+int16_t s_band_min_m[radar::kTerrainBandCount] = {};
 
 void initPixelToGridMap() {
   if (s_map_ready) {
@@ -71,7 +72,7 @@ int bandAtPixel(const core::terrain::Grid& grid, const int32_t* row_elev,
   return core::terrain::bandForSample(
       static_cast<int16_t>(elev_m),
       core::terrain::isLand(grid, grid_row, nearest_col),
-      radar::kTerrainBandMinM, radar::kTerrainBandCount);
+      s_band_min_m, radar::kTerrainBandCount);
 }
 
 void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
@@ -131,6 +132,11 @@ void drawTerrainBackground(lgfx::LGFXBase& gfx) {
   if (grid == nullptr) {
     return;
   }
+  if (!core::terrain::adaptiveBandFloors(
+          *grid, s_band_min_m, radar::kTerrainBandCount,
+          radar::kTerrainMinBandIntervalM)) {
+    return;
+  }
 
   initPixelToGridMap();
   // Grid row 0 is the north edge and column 0 the west edge, matching screen
@@ -141,4 +147,3 @@ void drawTerrainBackground(lgfx::LGFXBase& gfx) {
 }
 
 }  // namespace ui::terrain
-

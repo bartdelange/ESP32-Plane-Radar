@@ -648,4 +648,52 @@ int bandForSample(int16_t elev_m, bool is_land,
   return is_land ? bandForElevation(elev_m, band_min_m, band_count) : -1;
 }
 
+bool adaptiveBandFloors(const Grid& grid, int16_t* band_min_m, int band_count,
+                        int16_t min_interval_m) {
+  if (band_min_m == nullptr || band_count <= 0 || min_interval_m <= 0) {
+    return false;
+  }
+
+  int32_t min_m = INT16_MAX;
+  int32_t max_m = INT16_MIN;
+  for (int row = 0; row < kGridSize; ++row) {
+    for (int col = 0; col < kGridSize; ++col) {
+      if (!isLand(grid, row, col)) continue;
+      const int32_t elev_m = grid.elev_m[row * kGridSize + col];
+      if (elev_m < min_m) min_m = elev_m;
+      if (elev_m > max_m) max_m = elev_m;
+    }
+  }
+  if (min_m > max_m) return false;
+
+  int32_t interval = min_interval_m;
+  if (band_count > 1) {
+    const int32_t range_m = max_m - min_m;
+    const int32_t raw = (range_m + band_count - 2) / (band_count - 1);
+    if (raw > interval) interval = raw;
+  }
+
+  // Round upward to a cartographic 1/2/5 x 10^n step. Besides making the
+  // thresholds stable and understandable, this avoids reacting strongly to a
+  // one-metre change in the most extreme grid sample.
+  int32_t magnitude = 1;
+  while (interval > 10 * magnitude) magnitude *= 10;
+  if (interval <= magnitude) {
+    interval = magnitude;
+  } else if (interval <= 2 * magnitude) {
+    interval = 2 * magnitude;
+  } else if (interval <= 5 * magnitude) {
+    interval = 5 * magnitude;
+  } else {
+    interval = 10 * magnitude;
+  }
+
+  for (int i = 0; i < band_count; ++i) {
+    const int32_t floor_m = min_m + i * interval;
+    band_min_m[i] = static_cast<int16_t>(
+        floor_m > INT16_MAX ? INT16_MAX : floor_m);
+  }
+  return true;
+}
+
 }  // namespace core::terrain

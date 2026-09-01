@@ -569,6 +569,43 @@ void test_band_top_is_open_ended(void) {
   TEST_ASSERT_EQUAL_INT(6, ct::bandForElevation(9000, kBandFloors, kBandCount));
 }
 
+void setLandSample(ct::Grid* grid, int row, int col, int16_t elev_m) {
+  const int index = row * ct::kGridSize + col;
+  grid->land_mask[index >> 3] |= static_cast<uint8_t>(1u << (index & 7));
+  grid->elev_m[index] = elev_m;
+}
+
+void test_adaptive_bands_ignore_water_and_keep_lowland_detail(void) {
+  ct::Grid grid;
+  // These extreme water elevations must not flatten the useful land range.
+  grid.elev_m[0] = -1000;
+  grid.elev_m[1] = 3000;
+  setLandSample(&grid, 1, 1, -5);
+  setLandSample(&grid, 1, 2, 19);
+
+  int16_t floors[7];
+  TEST_ASSERT_TRUE(ct::adaptiveBandFloors(grid, floors, 7, 5));
+  const int16_t expected[] = {-5, 0, 5, 10, 15, 20, 25};
+  TEST_ASSERT_EQUAL_INT16_ARRAY(expected, floors, 7);
+}
+
+void test_adaptive_bands_use_sensible_mountain_spacing(void) {
+  ct::Grid grid;
+  setLandSample(&grid, 2, 2, 200);
+  setLandSample(&grid, 3, 3, 3200);
+
+  int16_t floors[7];
+  TEST_ASSERT_TRUE(ct::adaptiveBandFloors(grid, floors, 7, 5));
+  const int16_t expected[] = {200, 700, 1200, 1700, 2200, 2700, 3200};
+  TEST_ASSERT_EQUAL_INT16_ARRAY(expected, floors, 7);
+}
+
+void test_adaptive_bands_require_land(void) {
+  ct::Grid grid;
+  int16_t floors[7];
+  TEST_ASSERT_FALSE(ct::adaptiveBandFloors(grid, floors, 7, 5));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -611,6 +648,9 @@ int main(int, char**) {
   RUN_TEST(test_band_lowest);
   RUN_TEST(test_band_boundary_lands_in_higher_band);
   RUN_TEST(test_band_top_is_open_ended);
+  RUN_TEST(test_adaptive_bands_ignore_water_and_keep_lowland_detail);
+  RUN_TEST(test_adaptive_bands_use_sensible_mountain_spacing);
+  RUN_TEST(test_adaptive_bands_require_land);
 
   return UNITY_END();
 }
