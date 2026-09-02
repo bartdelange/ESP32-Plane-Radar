@@ -8,7 +8,7 @@ void radarDisplayDraw();
 /** Redraw aircraft only (blits cached grid; no full-screen clear). */
 void radarDisplayRefreshAircraft();
 
-/** Restore the off-screen static frame and release optional cache heap for TLS. */
+/** Rebuild the static frame off-screen before TLS; never pushes it to the panel. */
 void radarDisplayPrepareForNetwork();
 /** Advance time-based tag cycling without waiting for another ADS-B fetch. */
 void radarDisplayTick();

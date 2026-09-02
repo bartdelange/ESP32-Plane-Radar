@@ -183,6 +183,14 @@ void loop() {
   handleBootButton();
   wifiLoop();
 
+  // Configuration is an intentional mode, not background radar work. Keeping
+  // ADS-B paused while its HTTP server is active makes the two lifecycles
+  // deterministic; exit/save reboots into the lean radar process.
+  if (wifiConfigModeActive()) {
+    pf::sleepMs(10);
+    return;
+  }
+
   const bool terrain_enabled = ui::radar::showTerrain();
   if (terrain_enabled != g_last_terrain_enabled) {
     g_last_terrain_enabled = terrain_enabled;

@@ -71,6 +71,7 @@ bool s_force_config_portal = false;
 WiFiManager s_wm;
 bool s_wm_configured = false;
 bool s_portal_save_pending = false;
+bool s_config_mode_active = false;
 #ifdef WM_MDNS
 bool s_mdns_active = false;
 #endif
@@ -290,30 +291,46 @@ void ensureWifiManager() {
   if (s_wm_configured) {
     return;
   }
+  core::platform::logHeap("WiFiManager-before-init");
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));
   s_wm.setHostname(config::kPortalHostname);
   s_wm.setAPCallback(onConfigPortalApStarted);
+  // This 4 MB layout has no inactive OTA application slot. Hide WiFiManager's
+  // updater rather than offer an upload that Update.begin() cannot stage.
+  const char* menu[] = {"wifi", "param", "info", "exit"};
+  s_wm.setMenu(menu, sizeof(menu) / sizeof(menu[0]));
+  s_wm.setShowInfoUpdate(false);
   attachPortalParams(s_wm);
   s_wm_configured = true;
+  core::platform::logHeap("WiFiManager-after-init");
 }
 
 void stopLanWebPortal() {
-  if (s_wm_configured && s_wm.getWebPortalActive()) s_wm.stopWebPortal();
+  const bool was_active = s_wm_configured && s_wm.getWebPortalActive();
+  if (was_active) {
+    core::platform::logHeap("WebPortal-before-stop");
+    s_wm.stopWebPortal();
+  }
 #ifdef WM_MDNS
   if (s_mdns_active) {
     MDNS.end();
     s_mdns_active = false;
   }
 #endif
+  if (was_active) core::platform::logHeap("WebPortal-after-stop");
 }
 
 bool startLanWebPortal() {
   if (!wifiLinkUp()) return false;
   ensureWifiManager();
   refreshPortalParamDefaults();
-  if (!s_wm.getWebPortalActive()) s_wm.startWebPortal();
+  if (!s_wm.getWebPortalActive()) {
+    core::platform::logHeap("WebPortal-before-start");
+    s_wm.startWebPortal();
+    core::platform::logHeap("WebPortal-after-start");
+  }
   if (!s_wm.getWebPortalActive()) return false;
 #ifdef WM_MDNS
   if (!s_mdns_active && MDNS.begin(config::kPortalHostname)) {
@@ -514,7 +531,9 @@ bool wifiToggleLanWebPortal() {
   }
   if (s_wm_configured && s_wm.getWebPortalActive()) {
     stopLanWebPortal();
-    Serial.println("Configuration server disabled");
+    Serial.println("Leaving configuration mode — restarting radar");
+    delay(250);
+    esp_restart();
     return true;
   }
   s_portal_save_pending = false;
@@ -522,10 +541,13 @@ bool wifiToggleLanWebPortal() {
     Serial.println("Configuration server failed to start");
     return false;
   }
+  s_config_mode_active = true;
   Serial.printf("Configuration server enabled: http://%s/\n",
                 WiFi.localIP().toString().c_str());
   return true;
 }
+
+bool wifiConfigModeActive() { return s_config_mode_active; }
 
 void wifiStopLanWebPortal() { stopLanWebPortal(); }
 
@@ -536,6 +558,12 @@ void wifiLoop() {
   // restart), which is why nothing below it is required for correctness.
   bootButtonPollLongPress();
   if (!wifiLinkUp()) {
+    if (s_config_mode_active) {
+      stopLanWebPortal();
+      Serial.println("Configuration link lost — restarting radar");
+      delay(250);
+      esp_restart();
+    }
     stopLanWebPortal();
     return;
   }
@@ -543,16 +571,20 @@ void wifiLoop() {
   s_wm.process();
   if (!s_wm.getWebPortalActive()) {
     stopLanWebPortal();
-    return;
+    Serial.println("Configuration portal closed — restarting radar");
+    delay(250);
+    esp_restart();
   }
   if (s_portal_save_pending) {
-    s_portal_save_pending = false;
-    Serial.println("Configuration saved");
+    Serial.println("Configuration saved — restarting radar");
+    delay(250);
+    esp_restart();
   }
 }
 
 bool wifiSetupConnect() {
   initBootButton();
+  core::platform::logHeap("wifi-setup-entry-before-WiFiManager");
 
   const bool force_portal = consumeForceConfigPortal();
   WiFi.setAutoReconnect(false);
@@ -586,6 +618,7 @@ bool wifiSetupConnect() {
   }
 
   if (storedWifiCredentials() && connectSavedNetwork(true)) {
+    core::platform::logHeap("lean-saved-network-no-WiFiManager");
     WiFi.setAutoReconnect(true);
     Serial.printf("Connected: %s  IP %s\n", WiFi.SSID().c_str(),
                   WiFi.localIP().toString().c_str());

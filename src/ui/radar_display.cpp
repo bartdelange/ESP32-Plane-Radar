@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
-#include <cstdlib>
 
 #include "config.h"
 #include "core/geo.h"
@@ -68,24 +67,6 @@ bool s_frame_ready = false;
 bool s_frame_static_only = false;
 bool s_tag_cycle_active = false;
 unsigned long s_tag_cycle_phase_drawn = 0;
-
-/**
- * Lossless static-frame cache. A second RGB565 sprite would cost 115,200
- * bytes, so store row-local color runs instead. Static radar imagery is highly
- * compressible (terrain bands and dark background); a hard cap prevents an
- * unexpectedly noisy frame from consuming heap needed by HTTPS.
- */
-struct __attribute__((packed)) StaticRun {
-  uint16_t color;
-  uint8_t length;
-};
-
-constexpr size_t kStaticCacheMaxBytes = 24 * 1024;
-static_assert(sizeof(StaticRun) == 3);
-static_assert(kStaticCacheMaxBytes / sizeof(StaticRun) <= UINT16_MAX);
-StaticRun* s_static_runs = nullptr;
-uint16_t s_static_row_start[radar::kSize + 1] = {};
-bool s_static_cache_ready = false;
 
 class DrawScope {
  public:
@@ -757,117 +738,14 @@ bool ensureFrameSprite() {
   return true;
 }
 
-void clearStaticCache() {
-  std::free(s_static_runs);
-  s_static_runs = nullptr;
-  s_static_cache_ready = false;
-}
-
-size_t countStaticRuns() {
-  size_t count = 0;
-  for (int y = 0; y < radar::kSize; ++y) {
-    uint16_t color = s_frame.readPixel(0, y);
-    uint8_t length = 1;
-    for (int x = 1; x < radar::kSize; ++x) {
-      const uint16_t next = s_frame.readPixel(x, y);
-      if (next == color && length < UINT8_MAX) {
-        ++length;
-      } else {
-        ++count;
-        color = next;
-        length = 1;
-      }
-    }
-    ++count;
-  }
-  return count;
-}
-
-void cacheStaticFrame() {
-  const size_t run_count = countStaticRuns();
-  if (run_count == 0 || run_count > kStaticCacheMaxBytes / sizeof(StaticRun)) {
-    clearStaticCache();
-    core::platform::logf("radar: static frame is not cacheable\n");
-    return;
-  }
-
-  clearStaticCache();
-  const size_t cache_bytes = run_count * sizeof(StaticRun);
-  core::platform::logf("radar: static cache requesting %u bytes\n",
-                       static_cast<unsigned>(cache_bytes));
-  core::platform::logHeap("static-cache-before");
-  s_static_runs = static_cast<StaticRun*>(
-      std::malloc(cache_bytes));
-  if (s_static_runs == nullptr) {
-    core::platform::logf("radar: static frame cache alloc failed\n");
-    core::platform::logHeap("static-cache-failed");
-    return;
-  }
-
-  size_t out = 0;
-  for (int y = 0; y < radar::kSize; ++y) {
-    s_static_row_start[y] = static_cast<uint16_t>(out);
-    uint16_t color = s_frame.readPixel(0, y);
-    uint8_t length = 1;
-    for (int x = 1; x < radar::kSize; ++x) {
-      const uint16_t next = s_frame.readPixel(x, y);
-      if (next == color && length < UINT8_MAX) {
-        ++length;
-      } else {
-        s_static_runs[out++] = {color, length};
-        color = next;
-        length = 1;
-      }
-    }
-    s_static_runs[out++] = {color, length};
-  }
-  s_static_row_start[radar::kSize] = static_cast<uint16_t>(out);
-  s_static_cache_ready = out == run_count;
-  if (s_static_cache_ready) {
-    core::platform::logf("radar: cached static frame (%u bytes)\n",
-                         static_cast<unsigned>(out * sizeof(StaticRun)));
-    core::platform::logHeap("static-cache-after");
-  }
-}
-
-bool restoreStaticFrame() {
-  if (!s_static_cache_ready || s_static_runs == nullptr) return false;
-  uint16_t row[radar::kSize];
-  for (int y = 0; y < radar::kSize; ++y) {
-    size_t x = 0;
-    for (size_t i = s_static_row_start[y]; i < s_static_row_start[y + 1]; ++i) {
-      const StaticRun& run = s_static_runs[i];
-      if (x + run.length > radar::kSize) {
-        clearStaticCache();
-        return false;
-      }
-      std::fill_n(row + x, run.length, run.color);
-      x += run.length;
-    }
-    if (x != radar::kSize) {
-      clearStaticCache();
-      return false;
-    }
-    s_frame.pushImage(0, y, radar::kSize, 1, row);
-  }
-  return true;
-}
-
 // Double-buffered frame: composite the grid AND aircraft into the off-screen
 // sprite, then blit it to the panel in a single pushSprite. Because the panel
 // is updated in one pass, labels never show an erase/redraw gap — no flicker.
 void renderFrame(bool rebuild_static) {
-  if (rebuild_static) {
-    clearStaticCache();
+  if (rebuild_static || !s_frame_static_only) {
     drawStaticGrid(s_frame);  // opens its own DrawScope(s_frame)
     s_frame_static_only = true;
-  } else if (!s_frame_static_only) {
-    if (!restoreStaticFrame()) {
-      drawStaticGrid(s_frame);  // cache unavailable/corrupt: off-screen rebuild
-    }
-    s_frame_static_only = true;
   }
-  if (!s_static_cache_ready) cacheStaticFrame();
   {
     const DrawScope scope(s_frame);
     drawAircraft();
@@ -909,20 +787,19 @@ void radarDisplayRefreshAircraft() {
 void radarDisplayPrepareForNetwork() {
   if (!s_frame_ready) return;
 
-  // Cache is decorative and lower-priority than TLS. Restore the pristine
-  // static image into the already-owned framebuffer, then release the cache
-  // before WiFiClientSecure begins its handshake. The panel is untouched, so
-  // there is no visible terrain scan or partial frame.
+  // Rebuild exclusively into the existing off-screen framebuffer. There is no
+  // intermediate pushSprite(), so the panel continues showing the previous
+  // complete aircraft frame until the next complete frame is composed.
   if (!s_frame_static_only) {
-    if (!restoreStaticFrame()) {
-      drawStaticGrid(s_frame);
-    }
+    core::platform::logHeap("static-redraw-before-network");
+    const unsigned long started_ms = core::platform::nowMs();
+    drawStaticGrid(s_frame);
+    const unsigned long elapsed_ms = core::platform::nowMs() - started_ms;
     s_frame_static_only = true;
+    core::platform::logf("radar: off-screen static redraw %lu ms\n",
+                         elapsed_ms);
+    core::platform::logHeap("static-redraw-after-network");
   }
-  if (s_static_runs != nullptr) {
-    core::platform::logf("radar: releasing static cache before network\n");
-  }
-  clearStaticCache();
   core::platform::logHeap("network-ready");
 }
 

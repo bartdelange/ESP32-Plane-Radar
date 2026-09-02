@@ -197,6 +197,8 @@ bool wifiToggleLanWebPortal() {
   return s_lan_portal_enabled;
 }
 
+bool wifiConfigModeActive() { return s_lan_portal_enabled; }
+
 void wifiStopLanWebPortal() {
   portalServerStop();
   s_lan_portal_enabled = false;

@@ -340,12 +340,28 @@ pio run -t merge -e supermini
 
 Put the board in download mode (hold **BOOT**, tap **RESET**), then flash with Chrome/Edge over USB.
 
+Release assets distinguish the two ESP32 image formats:
+
+- `plane-radar-VERSION-factory.bin` is the complete merged image for a full
+  USB/esptool flash at address `0x0`.
+- `plane-radar-VERSION-ota.bin` is the application-only image format used by
+  an OTA updater. Never upload `factory.bin` through OTA.
+
+Web OTA is currently unavailable on the 4 MB Super Mini build, so the Update
+entry is hidden in the configuration portal. The partition table contains one
+3 MiB application partition (`ota_0`) and OTA metadata, but no inactive
+`ota_1` partition in which ESP-IDF can stage an update. A safe dual-slot table
+would provide only about 1.9 MiB per application after required data
+partitions; the current `firmware.bin` is about 2.3 MiB and does not fit.
+Supporting web OTA therefore requires reducing the application below that slot
+size (or using hardware with more flash) before changing the partition table.
+
 ### CI and releases (GitHub Actions)
 
 | Workflow | When | Output |
 |----------|------|--------|
 | [Build](.github/workflows/build.yml) | Push / PR to `main` | Artifact `plane-radar-supermini` (merged + split `.bin` files, ~90 days) |
-| [Release](.github/workflows/release.yml) | Git tag `v*` (e.g. `v1.0.0`) | GitHub Release asset `plane-radar-v1.0.0.bin` + `.sha256` |
+| [Release](.github/workflows/release.yml) | Git tag `v*` (e.g. `v1.0.0`) | Versioned `factory.bin` and application-format `ota.bin`, each with `.sha256` |
 
 To ship a version users can download:
 
@@ -354,7 +370,10 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The release workflow builds firmware in CI and attaches the merged image to the release. Download from **Releases** on GitHub, then flash at **0x0** (ESP32-C3, 4 MB).
+The release workflow publishes both formats without an ambiguous plain `.bin`
+name. For the current 4 MB partition layout, use `factory.bin` at `0x0`; the
+application-format `ota.bin` is published for forward compatibility but cannot
+be installed by the current device partition table.
 
 ## Dependencies
 
