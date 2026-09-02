@@ -11,7 +11,7 @@
 
 namespace core::geo {
 
-/** Flat-earth approximation, consistent with the original implementation. */
+/** North/south kilometres per degree used by the local tangent approximation. */
 constexpr float kKmPerDeg = 111.0f;
 
 /** Everything the projection needs to know about the current view. */
@@ -22,12 +22,34 @@ struct Viewport {
   int center_y = 0;
   int outer_radius_px = 0;   ///< outermost grid ring, px
   float outer_km = 0.0f;     ///< ground distance at outer_radius_px
+  float lon_km_per_deg = kKmPerDeg;  ///< cached kKmPerDeg*cos(center latitude)
 };
+
+/** Build a viewport and calculate its longitude scale exactly once. */
+Viewport makeViewport(double center_lat, double center_lon, int center_x,
+                      int center_y, int outer_radius_px, float outer_km);
 
 struct Point {
   int x = 0;
   int y = 0;
 };
+
+struct Coordinate {
+  double lat = 0.0;
+  double lon = 0.0;
+};
+
+/** Inverse of latLonToScreen for the same local tangent-plane viewport. */
+Coordinate screenToLatLon(const Viewport& vp, float x, float y);
+
+struct Segment {
+  Point a;
+  Point b;
+};
+
+/** Scale a projected segment about its midpoint, with a visual minimum. */
+Segment scaleVisualSegment(Point a, Point b, float scale,
+                           float minimum_length_px);
 
 /** Ground offset from the radar centre. North is +dy, east is +dx. */
 struct Offset {
@@ -38,7 +60,7 @@ struct Offset {
 
 Offset offsetKmFromCenter(const Viewport& vp, float lat, float lon);
 
-/** Project to screen pixels: 1 degree ~ 111 km, north = screen up. */
+/** Project local tangent-plane kilometres to screen pixels; north is up. */
 Point latLonToScreen(const Viewport& vp, float lat, float lon);
 
 /**

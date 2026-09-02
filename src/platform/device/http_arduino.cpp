@@ -70,6 +70,22 @@ class StreamBodyReader : public BodyReader {
     return written;
   }
 
+  void noteParserError(const char* error) override {
+    strncpy(parser_error_, error, sizeof(parser_error_) - 1);
+    parser_error_[sizeof(parser_error_) - 1] = '\0';
+  }
+
+  size_t bytesRead() const { return bytes_read_; }
+  const char* parserError() const {
+    return parser_error_[0] == '\0' ? "decoder-rejected" : parser_error_;
+  }
+  const char* termination() const {
+    if (remaining_ == 0) return "content-length-complete";
+    if (timed_out_) return "timeout";
+    if (connection_closed_) return "connection-closed";
+    return "parser-stopped";
+  }
+
  private:
   /** Blocks until at least one byte lands, the body ends, or time runs out. */
   bool fill() {
@@ -92,6 +108,7 @@ class StreamBodyReader : public BodyReader {
         const size_t got = stream_.readBytes(buffer_, want);
         if (got > 0) {
           len_ = got;
+          bytes_read_ += got;
           if (remaining_ > 0) {
             remaining_ -= static_cast<int>(got);
           }
@@ -99,10 +116,12 @@ class StreamBodyReader : public BodyReader {
         }
       }
       if (!http_.connected() && stream_.available() <= 0) {
+        connection_closed_ = true;
         return false;
       }
       delay(1);
     }
+    timed_out_ = true;
     return false;
   }
 
@@ -114,6 +133,10 @@ class StreamBodyReader : public BodyReader {
   char buffer_[kReadChunk];
   size_t pos_ = 0;
   size_t len_ = 0;
+  size_t bytes_read_ = 0;
+  bool connection_closed_ = false;
+  bool timed_out_ = false;
+  char parser_error_[24] = {};
 };
 
 }  // namespace
@@ -129,6 +152,7 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
     ~ActiveRequest() { s_request_active = false; }
   } active_request;
   int result = 0;
+
   WiFiClientSecure client;
   client.setInsecure();
 
@@ -145,9 +169,6 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
   http.setTimeout(timeout_ms);
   http.setConnectTimeout(kConnectTimeoutMs);
   poll(fn);
-  if (strstr(url, "adsb.fi") != nullptr) {
-    logHeap("ADSB-before-TLS");
-  }
   // Exactly one transport attempt per logical request. Retrying GET() here on
   // NOT_CONNECTED used to create a new TLS handshake every ~5 ms after an
   // mbedTLS allocation failure; subsystem-level cadence/backoff owns retries.
@@ -167,6 +188,12 @@ int HttpClient::getStatus(const char* url, BodyFn on_body,
 
   StreamBodyReader body(http, *stream, millis() + timeout_ms, fn);
   const bool ok = on_body(body);
+  if (!ok) {
+    logf("http: decode failed status=%d length=%d transfer=http10-uncollected "
+         "read=%u end=%s parser=%s\n",
+         code, http.getSize(), static_cast<unsigned>(body.bytesRead()),
+         body.termination(), body.parserError());
+  }
   http.end();
   result = ok ? code : 0;
   return result;

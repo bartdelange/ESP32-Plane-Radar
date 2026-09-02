@@ -14,4 +14,3 @@ namespace ui::terrain {
 void drawTerrainBackground(lgfx::LGFXBase& gfx);
 
 }  // namespace ui::terrain
-

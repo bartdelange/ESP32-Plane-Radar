@@ -47,7 +47,7 @@ constexpr float kAircraftTrackLengthScale = 1.5f / 5.0f;
 constexpr float kAircraftTrackLineHalfWidth = 1.0f;
 
 /**
- * Runway length exaggeration.
+ * Runway visual sizing.
  *
  * Real runways are 2-4 km. At a 20 NM ring that is only a couple of pixels, so
  * they read as dots rather than strips and their orientation — the useful part
@@ -55,9 +55,10 @@ constexpr float kAircraftTrackLineHalfWidth = 1.0f;
  * position and bearing stay true while the length becomes legible.
  *
  * Deliberately cosmetic: this overlay is an orientation aid, not a chart. At
- * this factor a 3 km runway draws as if it were 15 km.
+ * Lines are doubled at useful scales and never shorter than 15 pixels.
  */
-constexpr float kRunwayLengthScale = 5.0f;
+constexpr float kRunwayLengthScale = 2.0f;
+constexpr float kRunwayMinimumLengthPx = 15.0f;
 
 constexpr float kRunwayLineWidthPx = 2.0f;
 constexpr float kRunwayLineHalfWidth = kRunwayLineWidthPx * 0.5f;

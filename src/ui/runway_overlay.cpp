@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include "core/large_airports.h"
+#include "core/geo.h"
 #include "ui/display_font.h"
 #include "core/settings.h"
 #include "ui/radar_range.h"
@@ -14,7 +15,6 @@
 namespace ui::runway {
 namespace {
 
-constexpr float kKmPerDeg = 111.0f;
 constexpr size_t kMaxAirportLabels = 32;
 
 bool s_in_range[data::large_airports::kAirportCount];
@@ -70,27 +70,11 @@ void applyRunwayLabelStyle(lgfx::LGFXBase& gfx) {
 
 float e7ToDeg(int32_t e7) { return static_cast<float>(e7) * 1e-7f; }
 
-void offsetKmFromCenter(float lat, float lon, float* dx_km, float* dy_km,
-                        float* dist_km) {
-  *dx_km =
-      static_cast<float>(lon - core::settings::lon()) * kKmPerDeg;
-  *dy_km =
-      static_cast<float>(lat - core::settings::lat()) * kKmPerDeg;
-  *dist_km = sqrtf((*dx_km) * (*dx_km) + (*dy_km) * (*dy_km));
-}
-
-void latLonToScreen(float lat, float lon, int* out_x, int* out_y) {
-  const float outer_km = radar::rangeCurrent().outer_km;
-  const float px_per_km =
-      static_cast<float>(radar::kGridOuterRadius) / outer_km;
-
-  float dx_km = 0.0f;
-  float dy_km = 0.0f;
-  float dist_km = 0.0f;
-  offsetKmFromCenter(lat, lon, &dx_km, &dy_km, &dist_km);
-
-  *out_x = radar::kCenterX + static_cast<int>(lroundf(dx_km * px_per_km));
-  *out_y = radar::kCenterY - static_cast<int>(lroundf(dy_km * px_per_km));
+core::geo::Viewport currentViewport() {
+  return core::geo::makeViewport(
+      core::settings::lat(), core::settings::lon(), radar::kCenterX,
+      radar::kCenterY, radar::kGridOuterRadius,
+      radar::rangeCurrent().outer_km);
 }
 
 int distSqFromCenter(int x, int y) {
@@ -173,29 +157,24 @@ void drawBoldRunwayLabel(lgfx::LGFXBase& gfx, const char* ident, int mx, int my)
   gfx.drawString(ident, mx, my);
 }
 
-bool drawRunwayLine(lgfx::LGFXBase& gfx, const data::large_airports::Runway& rw) {
+bool drawRunwayLine(lgfx::LGFXBase& gfx, const core::geo::Viewport& vp,
+                    const data::large_airports::Runway& rw) {
   const float le_lat = e7ToDeg(rw.le_lat_e7);
   const float le_lon = e7ToDeg(rw.le_lon_e7);
   const float he_lat = e7ToDeg(rw.he_lat_e7);
   const float he_lon = e7ToDeg(rw.he_lon_e7);
 
-  // Stretch about the midpoint so the strip is long enough to read while its
-  // centre and bearing stay correct. Done in degrees, before projection, so the
-  // exaggeration scales with the range preset like everything else.
-  const float mid_lat = (le_lat + he_lat) * 0.5f;
-  const float mid_lon = (le_lon + he_lon) * 0.5f;
-  constexpr float kScale = radar::kRunwayLengthScale;
-  const float a_lat = mid_lat + (le_lat - mid_lat) * kScale;
-  const float a_lon = mid_lon + (le_lon - mid_lon) * kScale;
-  const float b_lat = mid_lat + (he_lat - mid_lat) * kScale;
-  const float b_lon = mid_lon + (he_lon - mid_lon) * kScale;
-
-  int x0 = 0;
-  int y0 = 0;
-  int x1 = 0;
-  int y1 = 0;
-  latLonToScreen(a_lat, a_lon, &x0, &y0);
-  latLonToScreen(b_lat, b_lon, &x1, &y1);
+  const core::geo::Point geographic_a =
+      core::geo::latLonToScreen(vp, le_lat, le_lon);
+  const core::geo::Point geographic_b =
+      core::geo::latLonToScreen(vp, he_lat, he_lon);
+  const core::geo::Segment visual = core::geo::scaleVisualSegment(
+      geographic_a, geographic_b, radar::kRunwayLengthScale,
+      radar::kRunwayMinimumLengthPx);
+  int x0 = visual.a.x;
+  int y0 = visual.a.y;
+  int x1 = visual.b.x;
+  int y1 = visual.b.y;
 
   if (!segmentIntersectsDisc(x0, y0, x1, y1)) {
     return false;
@@ -240,10 +219,12 @@ void clipPointOntoOuterRing(int* x, int* y) {
 }
 
 void drawAirportLabel(lgfx::LGFXBase& gfx,
+                      const core::geo::Viewport& vp,
                       const data::large_airports::Airport& ap) {
-  int ax = 0;
-  int ay = 0;
-  latLonToScreen(e7ToDeg(ap.lat_e7), e7ToDeg(ap.lon_e7), &ax, &ay);
+  const core::geo::Point p = core::geo::latLonToScreen(
+      vp, e7ToDeg(ap.lat_e7), e7ToDeg(ap.lon_e7));
+  int ax = p.x;
+  int ay = p.y;
   clipPointOntoOuterRing(&ax, &ay);
 
   int lx = 0;
@@ -260,6 +241,7 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
   }
   displayFontEnsureLoaded(gfx);
   const float radius_km = radar::fetchRadiusKm();
+  const core::geo::Viewport vp = currentViewport();
 
   uint16_t label_airports[kMaxAirportLabels];
   size_t label_count = 0;
@@ -274,17 +256,14 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
     const uint16_t ap_idx = rw.airport_idx;
     if (!s_in_range[ap_idx]) {
       const auto& ap = data::large_airports::kAirports[ap_idx];
-      float dx_km = 0.0f;
-      float dy_km = 0.0f;
-      float dist_km = 0.0f;
-      offsetKmFromCenter(e7ToDeg(ap.lat_e7), e7ToDeg(ap.lon_e7), &dx_km, &dy_km,
-                         &dist_km);
-      s_in_range[ap_idx] = (dist_km <= radius_km);
+      const core::geo::Offset offset = core::geo::offsetKmFromCenter(
+          vp, e7ToDeg(ap.lat_e7), e7ToDeg(ap.lon_e7));
+      s_in_range[ap_idx] = (offset.dist_km <= radius_km);
     }
     if (!s_in_range[ap_idx]) {
       continue;
     }
-    if (!drawRunwayLine(gfx, rw)) {
+    if (!drawRunwayLine(gfx, vp, rw)) {
       continue;
     }
     if (!s_label_pending[ap_idx] && label_count < kMaxAirportLabels) {
@@ -300,7 +279,8 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
   initRunwayLabelStyle(gfx);
   applyRunwayLabelStyle(gfx);
   for (size_t i = 0; i < label_count; ++i) {
-    drawAirportLabel(gfx, data::large_airports::kAirports[label_airports[i]]);
+    drawAirportLabel(gfx, vp,
+                     data::large_airports::kAirports[label_airports[i]]);
   }
 }
 

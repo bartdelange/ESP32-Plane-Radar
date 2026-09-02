@@ -291,7 +291,6 @@ void ensureWifiManager() {
   if (s_wm_configured) {
     return;
   }
-  core::platform::logHeap("WiFiManager-before-init");
   s_wm.setConfigPortalTimeout(config::kWifiPortalTimeoutSec);
   s_wm.setAPStaticIPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
                            IPAddress(255, 255, 255, 0));
@@ -304,13 +303,11 @@ void ensureWifiManager() {
   s_wm.setShowInfoUpdate(false);
   attachPortalParams(s_wm);
   s_wm_configured = true;
-  core::platform::logHeap("WiFiManager-after-init");
 }
 
 void stopLanWebPortal() {
   const bool was_active = s_wm_configured && s_wm.getWebPortalActive();
   if (was_active) {
-    core::platform::logHeap("WebPortal-before-stop");
     s_wm.stopWebPortal();
   }
 #ifdef WM_MDNS
@@ -319,7 +316,6 @@ void stopLanWebPortal() {
     s_mdns_active = false;
   }
 #endif
-  if (was_active) core::platform::logHeap("WebPortal-after-stop");
 }
 
 bool startLanWebPortal() {
@@ -327,9 +323,7 @@ bool startLanWebPortal() {
   ensureWifiManager();
   refreshPortalParamDefaults();
   if (!s_wm.getWebPortalActive()) {
-    core::platform::logHeap("WebPortal-before-start");
     s_wm.startWebPortal();
-    core::platform::logHeap("WebPortal-after-start");
   }
   if (!s_wm.getWebPortalActive()) return false;
 #ifdef WM_MDNS
@@ -584,7 +578,6 @@ void wifiLoop() {
 
 bool wifiSetupConnect() {
   initBootButton();
-  core::platform::logHeap("wifi-setup-entry-before-WiFiManager");
 
   const bool force_portal = consumeForceConfigPortal();
   WiFi.setAutoReconnect(false);
@@ -618,7 +611,6 @@ bool wifiSetupConnect() {
   }
 
   if (storedWifiCredentials() && connectSavedNetwork(true)) {
-    core::platform::logHeap("lean-saved-network-no-WiFiManager");
     WiFi.setAutoReconnect(true);
     Serial.printf("Connected: %s  IP %s\n", WiFi.SSID().c_str(),
                   WiFi.localIP().toString().c_str());

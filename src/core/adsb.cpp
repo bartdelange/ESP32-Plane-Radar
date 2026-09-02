@@ -262,6 +262,7 @@ bool parseBody(platform::BodyReader& body) {
     const DeserializationError err = deserializeJson(doc, in);
     if (err) {
       platform::logf("adsb: JSON parse error: %s\n", err.c_str());
+      body.noteParserError(err.c_str());
       ok = false;
       break;
     }
@@ -330,12 +331,11 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   char url[160];
   buildUrl(url, sizeof(url), center_lat, center_lon, fetch_radius_km);
 
-  if (!platform::HttpClient::get(url, parseBody, kRequestTimeoutMs,
-                                 s_poll_fn)) {
-    platform::logHeap("ADSB-HTTPS-returned-failed");
+  const bool fetched = platform::HttpClient::get(
+      url, parseBody, kRequestTimeoutMs, s_poll_fn);
+  if (!fetched) {
     return false;
   }
-  platform::logHeap("ADSB-HTTPS-returned");
 
   resolveRoutes();
   for (size_t i = 0; i < s_aircraft_count; ++i)
@@ -343,7 +343,6 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   core::track::expireStale();
   platform::logf("adsb: %u aircraft\n",
                  static_cast<unsigned>(s_aircraft_count));
-  platform::logHeap("ADSB-cycle-complete");
   return true;
 }
 

@@ -26,7 +26,6 @@ void logInit();
 
 /** Milliseconds since boot. Monotonic. */
 unsigned long nowMs();
-
 /** Yield for at least `ms`. Must be a real sleep, not a spin. */
 void sleepMs(unsigned long ms);
 
@@ -34,9 +33,6 @@ void sleepMs(unsigned long ms);
 
 /** printf semantics — no implicit newline, matching Serial.printf. */
 void logf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
-
-/** Device heap snapshot; native is a no-op because its allocator is unrelated. */
-void logHeap(const char* label);
 
 // --- Reboot ------------------------------------------------------------------
 
@@ -131,6 +127,9 @@ struct BodyReader {
 
   /** Fills up to `len` bytes; a short count means end of body. */
   virtual size_t readBytes(char* buf, size_t len) = 0;
+
+  /** Lets a streaming transport include decoder failures in its diagnostics. */
+  virtual void noteParserError(const char*) {}
 };
 
 /** BodyReader over bytes already in RAM — the native transport and tests. */

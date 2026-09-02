@@ -36,21 +36,26 @@ constexpr int kGrid = core::terrain::kGridSize;
 constexpr int kFracBits = 8;
 constexpr int32_t kFracOne = 1 << kFracBits;
 
-// Pixel -> grid-cell mapping is identical on both axes and for every frame
-// (pixel 0 -> grid line 0, pixel kSize-1 -> grid line kGrid-1), so the cell
-// index and fractional weight per pixel are computed once and reused.
+// Pixel -> grid-cell mapping is identical on both axes and for every frame.
+// Pixel kCenter maps exactly to the grid centre; the final display pixel is
+// one pixel short of the symmetric east/south view edge.
 int s_cell[radar::kSize];
 int32_t s_frac[radar::kSize];  ///< 0..kFracOne
 bool s_map_ready = false;
 int16_t s_band_min_m[radar::kTerrainBandCount] = {};
+// Direct WBM raster indices for each output axis. This decouples coastline
+// geometry from the 61x61 elevation grid without repeating double-precision
+// geographic transforms for all 57,600 output pixels. Fixed cost: 960 bytes.
+int16_t s_water_col[radar::kSize];
+int16_t s_water_row[radar::kSize];
 
 void initPixelToGridMap() {
   if (s_map_ready) {
     return;
   }
   for (int i = 0; i < radar::kSize; ++i) {
-    const int32_t position = static_cast<int32_t>(i) * (kGrid - 1) * kFracOne /
-                             (radar::kSize - 1);
+    const int32_t position = static_cast<int32_t>(i) *
+                             ((kGrid - 1) / 2) * kFracOne / radar::kCenterX;
     int cell = static_cast<int>(position >> kFracBits);
     int32_t frac = position & (kFracOne - 1);
     // The last pixel lands exactly on the final grid line; keep the cell index
@@ -65,10 +70,10 @@ void initPixelToGridMap() {
   s_map_ready = true;
 }
 
-uint16_t colorAtPixel(const int32_t* row_elev, int x, int y,
-                      const core::land_water::PixelView& land_view) {
+uint16_t colorAtPixel(const int32_t* row_elev, int x, int y) {
   bool is_land = false;
-  if (!core::land_water::classifyPixel(land_view, x, y, &is_land) ||
+  if (!core::land_water::classifyRasterCell(s_water_row[y], s_water_col[x],
+                                             &is_land) ||
       !is_land) {
     return radar::kColorBackground;
   }
@@ -83,8 +88,32 @@ uint16_t colorAtPixel(const int32_t* row_elev, int x, int y,
   return radar::kColorTerrain[band];
 }
 
+bool prepareWaterLookup(const core::land_water::PixelView& view) {
+  for (int x = 0; x < radar::kSize; ++x) {
+    int row = 0;
+    int col = 0;
+    if (!core::land_water::rasterCell(
+            view.north_lat,
+            view.west_lon + x * view.lon_degrees_per_pixel, &row, &col)) {
+      return false;
+    }
+    s_water_col[x] = static_cast<int16_t>(col);
+  }
+  for (int y = 0; y < radar::kSize; ++y) {
+    int row = 0;
+    int col = 0;
+    if (!core::land_water::rasterCell(
+            view.north_lat - y * view.lat_degrees_per_pixel, view.west_lon,
+            &row, &col)) {
+      return false;
+    }
+    s_water_row[y] = static_cast<int16_t>(row);
+  }
+  return true;
+}
+
 void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
-                  int y, const core::land_water::PixelView& land_view) {
+                  int y) {
   // The row weight is constant across the scanline: blend the two bracketing
   // grid rows into one kGrid-entry row up front so the per-pixel work is a
   // single horizontal lerp. Whole metres keep both lerps inside int32 for any
@@ -102,9 +131,9 @@ void drawScanline(lgfx::LGFXBase& gfx, const core::terrain::Grid& grid,
   // Classify every screen pixel directly against the compiled regional mask.
   // Only elevation interpolation uses kGrid; coastline geometry never does.
   int run_start = 0;
-  uint16_t run_color = colorAtPixel(row_elev, 0, y, land_view);
+  uint16_t run_color = colorAtPixel(row_elev, 0, y);
   for (int x = 1; x < radar::kSize; ++x) {
-    const uint16_t color = colorAtPixel(row_elev, x, y, land_view);
+    const uint16_t color = colorAtPixel(row_elev, x, y);
     if (color == run_color) {
       continue;
     }
@@ -144,13 +173,14 @@ void drawTerrainBackground(lgfx::LGFXBase& gfx) {
   core::land_water::PixelView land_view;
   if (!core::land_water::makePixelView(grid->center_lat, grid->center_lon,
                                        grid->half_span_km, radar::kSize,
-                                       &land_view)) {
+                                       &land_view) ||
+      !prepareWaterLookup(land_view)) {
     return;
   }
   // Grid row 0 is the north edge and column 0 the west edge, matching screen
   // y/x directly, so scanlines sample the grid without any axis flip.
   for (int y = 0; y < radar::kSize; ++y) {
-    drawScanline(gfx, *grid, y, land_view);
+    drawScanline(gfx, *grid, y);
   }
 }
 

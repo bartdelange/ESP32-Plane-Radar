@@ -228,14 +228,10 @@ void initPalette() {
 
 /** Current view, rebuilt on demand from the live location and range preset. */
 core::geo::Viewport viewport() {
-  core::geo::Viewport vp;
-  vp.center_lat = core::settings::lat();
-  vp.center_lon = core::settings::lon();
-  vp.center_x = radar::kCenterX;
-  vp.center_y = radar::kCenterY;
-  vp.outer_radius_px = radar::kGridOuterRadius;
-  vp.outer_km = radar::rangeCurrent().outer_km;
-  return vp;
+  return core::geo::makeViewport(
+      core::settings::lat(), core::settings::lon(), radar::kCenterX,
+      radar::kCenterY, radar::kGridOuterRadius,
+      radar::rangeCurrent().outer_km);
 }
 
 void drawBeyondRingDot(int x, int y) {
@@ -489,11 +485,11 @@ void sortBeyondDotsFarFirst(BeyondDotDrawItem* items, size_t count) {
   }
 }
 
-void drawTrackPath(const core::adsb::Aircraft& plane) {
+void drawTrackPath(const core::adsb::Aircraft& plane,
+                   const core::geo::Viewport& vp) {
   const core::track::Point* points = nullptr;
   const size_t count = core::track::path(plane.hex, &points);
   if (count < 2) return;
-  const core::geo::Viewport vp = viewport();
   for (size_t i = 1; i < count; ++i) {
     const auto a_off = core::geo::offsetKmFromCenter(vp, points[i - 1].lat,
                                                      points[i - 1].lon);
@@ -570,7 +566,7 @@ void drawAircraft() {
     const size_t i = items[d].index;
     const int x = items[d].x;
     const int y = items[d].y;
-    drawTrackPath(planes[i]);
+    drawTrackPath(planes[i], vp);
     drawSpeedVector(x, y, planes[i].nose_deg, planes[i].track_deg,
                     planes[i].gs_knots, radar::kColorTrackVector);
   }
@@ -727,14 +723,11 @@ bool ensureFrameSprite() {
     return true;
   }
   s_frame.setColorDepth(16);
-  core::platform::logHeap("framebuffer-before");
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     core::platform::logf("radar: frame sprite alloc failed\n");
-    core::platform::logHeap("framebuffer-failed");
     return false;
   }
   s_frame_ready = true;
-  core::platform::logHeap("framebuffer-after");
   return true;
 }
 
@@ -791,16 +784,9 @@ void radarDisplayPrepareForNetwork() {
   // intermediate pushSprite(), so the panel continues showing the previous
   // complete aircraft frame until the next complete frame is composed.
   if (!s_frame_static_only) {
-    core::platform::logHeap("static-redraw-before-network");
-    const unsigned long started_ms = core::platform::nowMs();
     drawStaticGrid(s_frame);
-    const unsigned long elapsed_ms = core::platform::nowMs() - started_ms;
     s_frame_static_only = true;
-    core::platform::logf("radar: off-screen static redraw %lu ms\n",
-                         elapsed_ms);
-    core::platform::logHeap("static-redraw-after-network");
   }
-  core::platform::logHeap("network-ready");
 }
 
 void radarDisplayTick() {

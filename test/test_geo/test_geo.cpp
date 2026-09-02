@@ -8,6 +8,8 @@
 
 #include <unity.h>
 
+#include <cmath>
+
 #include "core/geo.h"
 
 namespace geo = core::geo;
@@ -16,14 +18,8 @@ namespace {
 
 /** The real device view: 240x240 screen, 107 px outer ring, 10 km preset. */
 geo::Viewport deviceViewport() {
-  geo::Viewport vp;
-  vp.center_lat = 52.3676;
-  vp.center_lon = 4.9041;
-  vp.center_x = 120;
-  vp.center_y = 120;
-  vp.outer_radius_px = 107;
-  vp.outer_km = 10.0f * 4.0f / 3.0f;  // 10 km ring-3 preset
-  return vp;
+  return geo::makeViewport(52.3676, 4.9041, 120, 120, 107,
+                           10.0f * 4.0f / 3.0f);
 }
 
 constexpr int kInset = 13;  // kAircraftInsideRingInsetPx
@@ -51,6 +47,100 @@ void test_north_is_positive_dy_east_is_positive_dx(void) {
   const geo::Offset east = geo::offsetKmFromCenter(vp, 52.3676f, 5.0041f);
   TEST_ASSERT_TRUE(east.dx_km > 0.0f);
   TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, east.dy_km);
+}
+
+void test_east_uses_origin_latitude_cosine(void) {
+  const geo::Viewport vp = deviceViewport();
+  const geo::Offset east = geo::offsetKmFromCenter(vp, 52.3676f, 5.0041f);
+  const float expected =
+      0.1f * geo::kKmPerDeg * cosf(52.3676f * static_cast<float>(M_PI) / 180.0f);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, expected, east.dx_km);
+}
+
+void test_equal_kilometres_north_and_east_render_equally(void) {
+  const geo::Viewport vp = deviceViewport();
+  const float north_deg = 1.0f / geo::kKmPerDeg;
+  const float east_deg = 1.0f / vp.lon_km_per_deg;
+  const geo::Point north = geo::latLonToScreen(
+      vp, static_cast<float>(vp.center_lat) + north_deg,
+      static_cast<float>(vp.center_lon));
+  const geo::Point east = geo::latLonToScreen(
+      vp, static_cast<float>(vp.center_lat),
+      static_cast<float>(vp.center_lon) + east_deg);
+  TEST_ASSERT_INT_WITHIN(1, vp.center_y - north.y, east.x - vp.center_x);
+}
+
+void test_inverse_projection_agrees_with_forward_projection(void) {
+  const geo::Viewport vp = deviceViewport();
+  constexpr float kLat = 52.3976f;
+  constexpr float kLon = 4.9541f;
+  const geo::Point screen = geo::latLonToScreen(vp, kLat, kLon);
+  const geo::Coordinate coordinate = geo::screenToLatLon(
+      vp, static_cast<float>(screen.x), static_cast<float>(screen.y));
+  const geo::Point round_trip = geo::latLonToScreen(
+      vp, static_cast<float>(coordinate.lat), static_cast<float>(coordinate.lon));
+  TEST_ASSERT_INT_WITHIN(1, screen.x, round_trip.x);
+  TEST_ASSERT_INT_WITHIN(1, screen.y, round_trip.y);
+}
+
+void test_ehle_runway_has_geographic_length_and_heading(void) {
+  // Generated regional-pack endpoints for EHLE runway 05/23.
+  const geo::Viewport vp = geo::makeViewport(52.453188, 5.514622, 120, 120,
+                                             107, 20.0f * 4.0f / 3.0f);
+  const geo::Offset a = geo::offsetKmFromCenter(vp, 52.4448200f, 5.4995420f);
+  const geo::Offset b = geo::offsetKmFromCenter(vp, 52.4612080f, 5.5288700f);
+  const float east_km = b.dx_km - a.dx_km;
+  const float north_km = b.dy_km - a.dy_km;
+  TEST_ASSERT_FLOAT_WITHIN(0.03f, 2.70f, hypotf(east_km, north_km));
+  const float heading = atan2f(east_km, north_km) * 180.0f /
+                        static_cast<float>(M_PI);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 47.5f, heading);
+}
+
+void test_visual_segment_uses_normal_scale(void) {
+  geo::Point a;
+  a.x = 10;
+  a.y = 20;
+  geo::Point b;
+  b.x = 20;
+  b.y = 20;
+  const geo::Segment scaled = geo::scaleVisualSegment(a, b, 2.0f, 15.0f);
+  TEST_ASSERT_EQUAL_INT(5, scaled.a.x);
+  TEST_ASSERT_EQUAL_INT(25, scaled.b.x);
+  TEST_ASSERT_EQUAL_INT(20, scaled.a.y);
+  TEST_ASSERT_EQUAL_INT(20, scaled.b.y);
+}
+
+void test_visual_segment_uses_minimum_and_preserves_midpoint_heading(void) {
+  geo::Point a;
+  a.x = 100;
+  a.y = 100;
+  geo::Point b;
+  b.x = 104;
+  b.y = 103;
+  const geo::Segment scaled = geo::scaleVisualSegment(a, b, 2.0f, 15.0f);
+  TEST_ASSERT_INT_WITHIN(1, 102, (scaled.a.x + scaled.b.x) / 2);
+  TEST_ASSERT_INT_WITHIN(1, 101, (scaled.a.y + scaled.b.y) / 2);
+  TEST_ASSERT_FLOAT_WITHIN(
+      1.0f, atan2f(3.0f, 4.0f),
+      atan2f(static_cast<float>(scaled.b.y - scaled.a.y),
+             static_cast<float>(scaled.b.x - scaled.a.x)));
+  TEST_ASSERT_FLOAT_WITHIN(
+      1.0f, 15.0f,
+      hypotf(static_cast<float>(scaled.b.x - scaled.a.x),
+             static_cast<float>(scaled.b.y - scaled.a.y)));
+}
+
+void test_ehle_visual_length_is_about_22_pixels_at_20_km(void) {
+  const geo::Viewport vp = geo::makeViewport(52.453188, 5.514622, 120, 120,
+                                             107, 20.0f * 4.0f / 3.0f);
+  const geo::Point a = geo::latLonToScreen(vp, 52.4448200f, 5.4995420f);
+  const geo::Point b = geo::latLonToScreen(vp, 52.4612080f, 5.5288700f);
+  const geo::Segment visual = geo::scaleVisualSegment(a, b, 2.0f, 15.0f);
+  const float length =
+      hypotf(static_cast<float>(visual.b.x - visual.a.x),
+             static_cast<float>(visual.b.y - visual.a.y));
+  TEST_ASSERT_FLOAT_WITHIN(1.5f, 22.0f, length);
 }
 
 // --- latLonToScreen ----------------------------------------------------------
@@ -198,6 +288,13 @@ int main(int, char**) {
 
   RUN_TEST(test_offset_is_zero_at_the_centre);
   RUN_TEST(test_north_is_positive_dy_east_is_positive_dx);
+  RUN_TEST(test_east_uses_origin_latitude_cosine);
+  RUN_TEST(test_equal_kilometres_north_and_east_render_equally);
+  RUN_TEST(test_inverse_projection_agrees_with_forward_projection);
+  RUN_TEST(test_ehle_runway_has_geographic_length_and_heading);
+  RUN_TEST(test_visual_segment_uses_normal_scale);
+  RUN_TEST(test_visual_segment_uses_minimum_and_preserves_midpoint_heading);
+  RUN_TEST(test_ehle_visual_length_is_about_22_pixels_at_20_km);
 
   RUN_TEST(test_centre_projects_to_screen_centre);
   RUN_TEST(test_north_moves_up_the_screen);

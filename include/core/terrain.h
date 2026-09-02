@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include "config.h"
+#include "core/geo.h"
 
 namespace core::terrain {
 constexpr int kGridSize = config::kTerrainGridSize;
@@ -14,6 +15,9 @@ struct Grid {
   double center_lat = 0.0;
   double center_lon = 0.0;
   float half_span_km = 0.0f;
+  float lon_km_per_deg = core::geo::kKmPerDeg;
+  int16_t land_median_m = 0;
+  bool land_median_valid = false;
   int16_t elev_m[kGridPoints] = {};
 };
 
